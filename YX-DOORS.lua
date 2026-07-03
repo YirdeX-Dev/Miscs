@@ -152,7 +152,7 @@ function DoorsNotify(unsafeOptions)
 
 		Library = nil
 
-		getgenv().YX-HUBHubLoaded = false
+		getgenv().AbysallHubLoaded = false
 		getgenv().Library = nil
 	end
 
@@ -1351,7 +1351,7 @@ AddElevatorManager(Groupbox)
 			ESPLibrary:Unload()
 			Library = nil
 
-			getgenv().YX-HUBHubLoaded = false
+			getgenv().AbysallHubLoaded = false
 			getgenv().Library = nil
 
 
@@ -2289,7 +2289,7 @@ task.wait()
 				Description = "There was an error while loading the script",
 			})	
 			Sound()
-			getgenv().YX-HUBHubLoaded = false
+			getgenv().AbysallHubLoaded = false
 		else
 			local Modules = Player.PlayerGui.MainUI.Initiator.Main_Game.RemoteListener.Modules
 			local ModulesClient = ReplicatedStorage:FindFirstChild("ModulesClient") or ReplicatedStorage:FindFirstChild("ClientModules")
@@ -4198,8 +4198,9 @@ if Deleted == false then
 			else
 	
 										if Options.NotifyMonsters.Value[EntityShortNames[child.Name]] and Toggles.NotifyEntities.Value then
-Notify({Title = "实体警告", Description = "实体 '"..EntityAlliases[child.Name] .. "' 已生成。", Reason = "避免看向它！", Image = EntityIcons[child.Name], NotificationType = "警告"})
-Sound()
+    Notify({Title = "实体警告", Description = "实体 '"..EntityAlliases[child.Name] .. "' 已生成。", Reason = "避免看向它！", Image = EntityIcons[child.Name], NotificationType = "警告"})
+    Sound()
+end
 
 end
 
@@ -4371,7 +4372,7 @@ task.wait(1)
 
 if #inst:GetChildren() > 0 then
 
-    Notify({Title = "删除Seek", Description = "删除Seek触发器失败。", Reason = "Seek触发器已被删除，但其他人仍可触发。")
+    Notify({Title = "删除Seek", Description = "删除Seek触发器失败。", Reason = "Seek触发器已被删除，但其他人仍可触发。"})
 					Sound()
 
 					for i,inst2 in pairs(inst:GetChildren()) do
@@ -13780,7 +13781,7 @@ function Unload()
 
 
 
-	getgenv().YX-HUBHubLoaded = false
+	getgenv().AbysallHubLoaded = false
 
 	task.wait(1)
 
