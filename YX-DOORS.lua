@@ -16,12 +16,17 @@ end
 
  LoadingTime = tick()
 
- local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+ -- 1. 先加载库
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo .. "SaveManager.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "ThemeManager.lua"))()
 
- Toggles = Library.Toggles
- Options = Library.Options
+-- 2. 等待 UI 初始化完成（关键）
+task.wait(0.1)  -- 给 UI 库一点时间生成内部属性
+
+-- 3. 再获取 Toggles 和 Options
+Toggles = Library.Toggles
+Options = Library.Options
 
 
 
@@ -800,11 +805,6 @@ local ElevatorManagerLeft = Tabs.Saves:AddLeftGroupbox('创建')
 			['The Rooms'] = 'Rooms'
 		}
 
-		Player.PlayerGui.MainUI.LobbyFrame.CreateElevator.SidePanel.Modifiers.ChildAdded:Connect(function(Child)
-			if Child:IsA("TextButton") and not table.find(ModifierExclude, Child.Name) then
-				table.insert(ModifierFrames, Child)
-			end
-		end)
 
 		Player.PlayerGui.MainUI.LobbyFrame.CreateElevator.SidePanel.Modifiers.ChildRemoved:Connect(function(Child)
 			for i,Modifier in pairs(ModifierFrames) do
