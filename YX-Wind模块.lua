@@ -333,21 +333,3 @@ do
         end
     end)
 end
-
-do
-    local RunService = game:GetService("RunService")
-
-    local function brightenTabIcon(tab)
-        local icon = tab.UIElements and tab.UIElements.Icon
-        if icon and icon.ImageLabel then
-            icon.ImageLabel.ImageTransparency = 0
-        end
-    end
-
-    RunService.Heartbeat:Connect(function()
-        for _, tab in pairs(Window.TabModule.Tabs) do
-            brightenTabIcon(tab)
-        end
-    end)
-end
-
