@@ -1,4 +1,4 @@
---YX-Wind UI库
+--YX-WindUI库
 type ConfigType__DARKLUA_TYPE_a={
 Object:Instance,
 Camera:Instance?,
@@ -2387,12 +2387,9 @@ end
 
 local ag=JunkieProtected.ValidateKey{Key=ae}
 if ag=="valid"then
-print"密钥有效！正在启动脚本..."
 load()
 if _G.JD_IsPremium then
-print"检测到高级用户！"
 else
-print"普通用户"
 end
 
 return true,"密钥有效！"
@@ -13388,7 +13385,7 @@ TextXAlignment="Left",
 Name="DisplayName",
 }),
 ao("TextLabel",{
-Text=aw.User.Anonymous and"匿名用户"or ak.LocalPlayer.Name,
+Text=aw.User.Anonymous and"YX-脚本用户"or ak.LocalPlayer.Name,
 TextSize=15,
 TextTransparency=0.6,
 ThemeTag={
@@ -13447,8 +13444,8 @@ g=true
 end
 aw.User.Anonymous=g
 d.UserIcon.ImageLabel.Image=GetUserThumb()
-d.UserIcon.Frame.DisplayName.Text=g and"匿名"or ak.LocalPlayer.DisplayName
-d.UserIcon.Frame.UserName.Text=g and"匿名用户"or ak.LocalPlayer.Name
+d.UserIcon.Frame.DisplayName.Text=g and"YX-脚本用户"or ak.LocalPlayer.DisplayName
+d.UserIcon.Frame.UserName.Text=g and"YX-脚本用户"or ak.LocalPlayer.Name
 end
 
 if aw.User.Enabled then
