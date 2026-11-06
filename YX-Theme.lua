@@ -1,4 +1,3 @@
-local WindUI = _G.WindUI
 if not WindUI then
     error("YX-Theme: 未找到 WindUI。请在主脚本加载本模块前先写 _G.WindUI = WindUI")
 end
