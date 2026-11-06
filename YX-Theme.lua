@@ -1,6 +1,5 @@
-if not WindUI then
-    error("YX-Theme: 未找到 WindUI。请在主脚本加载本模块前先写 _G.WindUI = WindUI")
-end
+local WindUI = _G.WindUI
+if not WindUI then error("YX-Themes: 缺失 _G.WindUI") end
 
 local THEME_FOLDER = "YX-HUB"
 local THEME_FILE   = THEME_FOLDER .. "/yx_last_theme.txt"
@@ -261,10 +260,10 @@ WindUI:AddTheme({
     }, { Rotation = 45 }),
 })
 
-_G.savedTheme        = savedTheme
-_G.ALLOWED_THEMES    = ALLOWED_THEMES
-_G.isAllowedTheme    = isAllowedTheme
-_G.ThemeMemory       = ThemeMemory
+_G.savedTheme = savedTheme
+_G.ALLOWED_THEMES = ALLOWED_THEMES
+_G.isAllowedTheme = isAllowedTheme
+_G.ThemeMemory = ThemeMemory
 _G.THEME_BACKGROUNDS = THEME_BACKGROUNDS
-_G.wallpaperFor      = wallpaperFor
-_G.onEnterTheme      = onEnterTheme
+_G.wallpaperFor = wallpaperFor
+_G.onEnterTheme = onEnterTheme
