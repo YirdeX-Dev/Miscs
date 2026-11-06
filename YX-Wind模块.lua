@@ -1,361 +1,18 @@
-local YXTheme = (function()
-    local listeners = {}
-    local lastName = nil
-
-    local function getName()
-        local Creator = WindUI.Creator
-        if Creator and type(Creator.Theme) == "table" and type(Creator.Theme.Name) == "string" then
-            return Creator.Theme.Name
-        end
-        if type(WindUI.Theme) == "table" and type(WindUI.Theme.Name) == "string" then
-            return WindUI.Theme.Name
-        end
-        local ok, name = pcall(function()
-            return WindUI:GetCurrentTheme()
-        end)
-        if ok and type(name) == "string" and name ~= "" then
-            return name
-        end
-        if type(WindUI.CurrentTheme) == "string" then
-            return WindUI.CurrentTheme
-        end
-        if type(WindUI.CurrentTheme) == "table" and WindUI.CurrentTheme.Name then
-            return WindUI.CurrentTheme.Name
-        end
-        return "Dark"
-    end
-
-    local function getTable()
-        local Creator = WindUI.Creator
-        if Creator and type(Creator.Theme) == "table" and Creator.Theme.Name then
-            return Creator.Theme
-        end
-        if type(WindUI.Theme) == "table" and WindUI.Theme.Name then
-            return WindUI.Theme
-        end
-        local name = getName()
-        local ok, themes = pcall(function()
-            return WindUI:GetThemes()
-        end)
-        local tbl = (ok and type(themes) == "table" and themes) or WindUI.Themes
-        if type(tbl) == "table" and type(tbl[name]) == "table" then
-            return tbl[name]
-        end
-        if type(WindUI.CurrentTheme) == "table" then
-            return WindUI.CurrentTheme
-        end
-        return nil
-    end
-
-    local function toColor3(v)
-        if typeof(v) == "Color3" then
-            return v
-        end
-        if type(v) == "string" then
-            local ok, c = pcall(Color3.fromHex, v)
-            if ok and typeof(c) == "Color3" then
-                return c
-            end
-            return nil
-        end
-        if type(v) == "table" then
-            if typeof(v.Color) == "ColorSequence" then
-                local kp = v.Color.Keypoints
-                if kp and #kp > 0 then
-                    local r, g, b = 0, 0, 0
-                    for _, k in ipairs(kp) do
-                        r = r + k.Value.R
-                        g = g + k.Value.G
-                        b = b + k.Value.B
-                    end
-                    return Color3.new(r / #kp, g / #kp, b / #kp)
-                end
-            end
-            if typeof(v.Color) == "Color3" then
-                return v.Color
-            end
-            if type(v["0"]) == "table" and typeof(v["0"].Color) == "Color3" then
-                return v["0"].Color
-            end
-        end
-        return nil
-    end
-
-    local function getTextColor()
-        local theme = getTable()
-        if theme and WindUI.Creator and type(WindUI.Creator.GetThemeProperty) == "function" then
-            local ok, value = pcall(function()
-                return WindUI.Creator:GetThemeProperty("Text", theme)
-            end)
-            if ok then
-                local c = toColor3(value)
-                if c then return c end
-            end
-        end
-        if theme then
-            local c = toColor3(theme.Text)
-            if c then return c end
-        end
-        if type(WindUI.CurrentTheme) == "table" then
-            local c = toColor3(WindUI.CurrentTheme.Text)
-            if c then return c end
-        end
-        return Color3.new(1, 1, 1)
-    end
-
-    local function dispatch(name)
-        lastName = name
-        for _, fn in ipairs(listeners) do
-            task.spawn(function()
-                pcall(fn, name)
-            end)
-        end
-    end
-
-    local function onChange(fn)
-        if type(fn) == "function" then
-            table.insert(listeners, fn)
-        end
-    end
-
-    lastName = getName()
-
-    pcall(function()
-        local Creator = WindUI.Creator
-        if Creator and type(Creator.OnThemeChange) == "function" then
-            Creator:OnThemeChange(function(newTheme)
-                local name
-                if type(newTheme) == "table" then
-                    name = newTheme.Name
-                elseif type(newTheme) == "string" then
-                    name = newTheme
-                end
-                dispatch(name or getName())
-            end)
-        end
-    end)
-
-    task.spawn(function()
-        while task.wait(0.3) do
-            local name = getName()
-            if name and name ~= lastName then
-                dispatch(name)
-            end
-        end
-    end)
-
-    local PALETTES = {
-        ["YX-Wind"] = {
-            waveA = Color3.fromHex("#00FFFF"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#00FFFF"),
-            tagA = Color3.fromHex("#00B0FF"), tagMid = Color3.fromHex("#00E5FF"), tagB = Color3.fromHex("#00B0FF"),
-            openBtnBg = Color3.fromHex("#0A1626"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#00FFFF"),
-        },
-        ["YX-PinkWhite"] = {
-            waveA = Color3.fromHex("#EA788C"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#EA788C"),
-            tagA = Color3.fromHex("#F8B9C3"), tagMid = Color3.fromHex("#EA788C"), tagB = Color3.fromHex("#F8B9C3"),
-            openBtnBg = Color3.fromHex("#FDF0F2"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#EA788C"),
-        },
-        ["YX-PurpleWhite"] = {
-            waveA = Color3.fromHex("#A770DA"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#7C42D9"),
-            tagA = Color3.fromHex("#C1A3DA"), tagMid = Color3.fromHex("#954AE7"), tagB = Color3.fromHex("#C1A3DA"),
-            openBtnBg = Color3.fromHex("#1F1944"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#7C42D9"),
-        },
-        ["YX-CyanWhite"] = {
-            waveA = Color3.fromHex("#809BCB"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#607DB7"),
-            tagA = Color3.fromHex("#A7BCDE"), tagMid = Color3.fromHex("#809BCB"), tagB = Color3.fromHex("#A7BCDE"),
-            openBtnBg = Color3.fromHex("#2A386B"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#607DB7"),
-        },
-        ["YX-CrimsonWhite"] = {
-            waveA = Color3.fromHex("#AC6549"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#AC6549"),
-            tagA = Color3.fromHex("#C4845D"), tagMid = Color3.fromHex("#81423F"), tagB = Color3.fromHex("#C4845D"),
-            openBtnBg = Color3.fromHex("#1D1C21"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#AC6549"),
-        },
-        ["YX-GoldWhite"] = {
-            waveA = Color3.fromHex("#E7B55A"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#E7B55A"),
-            tagA = Color3.fromHex("#F8D050"), tagMid = Color3.fromHex("#BE832B"), tagB = Color3.fromHex("#F8D050"),
-            openBtnBg = Color3.fromHex("#F8F6F2"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#E7B55A"),
-        },
-    }
-
-    local paletteCache = {}
-
-    local function colorToHex(c)
-        return string.format("#%02X%02X%02X",
-            math.floor(c.R * 255 + 0.5),
-            math.floor(c.G * 255 + 0.5),
-            math.floor(c.B * 255 + 0.5))
-    end
-
-    local function getPalette()
-        local name = getName()
-        if paletteCache[name] then return paletteCache[name] end
-
-        local p = PALETTES[name]
-        if not p then
-            local theme = getTable()
-            local main = Color3.fromHex("#EA788C")
-            if theme and WindUI.Creator and type(WindUI.Creator.GetThemeProperty) == "function" then
-                local ok, c = pcall(function()
-                    return WindUI.Creator:GetThemeProperty("Outline", theme)
-                end)
-                if ok and typeof(c) == "Color3" then main = c end
-            end
-            local white = Color3.fromHex("#FFFFFF")
-            p = {
-                waveA = main, waveB = white,
-                gradEdge = white, gradMid = main,
-                tagA = main:Lerp(white, 0.5), tagMid = main, tagB = main:Lerp(white, 0.5),
-                openBtnBg = white,
-                btnGradA = white, btnGradB = main,
-            }
-        end
-
-        p.openBtnText = getTextColor()
-        paletteCache[name] = p
-        return p
-    end
-
-    return {
-        getName = getName,
-        getTable = getTable,
-        getTextColor = getTextColor,
-        getPalette = getPalette,
-        colorToHex = colorToHex,
-        onChange = onChange,
-    }
-end)()
-
-local addGradientBorder
-do
-    local RunService = game:GetService("RunService")
-    local borders = {}
-    local Speed = 120
-    local last = os.clock()
-
-    local function gradient()
-        local p = YXTheme.getPalette()
-        return ColorSequence.new({
-            ColorSequenceKeypoint.new(0,   p.gradEdge),
-            ColorSequenceKeypoint.new(0.5, p.gradMid),
-            ColorSequenceKeypoint.new(1,   p.gradEdge),
-        })
-    end
-
-    addGradientBorder = function(target, opts)
-        if not target or not opts or not opts.name then return end
-        if target:FindFirstChild(opts.name) then return end
-
-        local fitTo = opts.fitTo
-
-        local border = Instance.new("Frame")
-        border.Name = opts.name
-        border.BackgroundTransparency = 1
-        border.BorderSizePixel = 0
-        border.Active = false
-        if fitTo then
-            border.AnchorPoint = Vector2.new(0, 0)
-            border.Size = UDim2.fromOffset(0, 0)
-            border.Position = UDim2.fromOffset(0, 0)
-            border.Visible = false
-            border.ZIndex = (fitTo.ZIndex or 1) + 1
-        elseif opts.inset then
-            border.Size = UDim2.new(1, -opts.inset, 1, -opts.inset)
-            border.AnchorPoint = Vector2.new(0.5, 0.5)
-            border.Position = UDim2.new(0.5, 0, 0.5, 0)
-        else
-            border.Size = UDim2.fromScale(1, 1)
-        end
-        border.Parent = target
-
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, opts.radius or 16)
-        corner.Parent = border
-
-        local stroke = Instance.new("UIStroke")
-        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        stroke.Thickness = opts.thickness or 2
-        stroke.Transparency = opts.transparency or 0
-        stroke.Color = Color3.new(1, 1, 1)
-        stroke.Parent = border
-
-        local grad = Instance.new("UIGradient")
-        grad.Enabled = true
-        grad.Color = gradient()
-        grad.Parent = stroke
-
-        borders[border] = {
-            grad = grad, stroke = stroke,
-            thickness = opts.thickness or 2, pulse = opts.pulse, fitTo = fitTo,
-        }
-    end
-
-    YXTheme.onChange(function()
-        local seq = gradient()
-        for border, r in pairs(borders) do
-            if border.Parent then
-                r.grad.Color = seq
-            else
-                borders[border] = nil
-            end
-        end
-    end)
-
-    RunService.Heartbeat:Connect(function()
-        local now = os.clock()
-        local dt = now - last
-        last = now
-        for border, r in pairs(borders) do
-            local alive = border.Parent ~= nil
-            if alive and r.fitTo then
-                local f = r.fitTo
-                if not f.Parent then
-                    border:Destroy()
-                    borders[border] = nil
-                    alive = false
-                else
-                    local w, h = f.AbsoluteSize.X, f.AbsoluteSize.Y
-                    if w >= 40 and h >= 40 then
-                        local host = border.Parent
-                        border.Size = UDim2.fromOffset(w, h)
-                        border.Position = UDim2.fromOffset(
-                            f.AbsolutePosition.X - host.AbsolutePosition.X,
-                            f.AbsolutePosition.Y - host.AbsolutePosition.Y)
-                        border.Visible = true
-                    else
-                        border.Visible = false
-                    end
-                end
-            end
-            if alive then
-                r.grad.Rotation = (r.grad.Rotation + Speed * dt) % 360
-                if r.pulse then
-                    r.stroke.Thickness = r.thickness + math.sin(now * 3) * 0.4
-                end
-            else
-                borders[border] = nil
-            end
-        end
-    end)
+local WindUI = _G.WindUI
+if not WindUI then
+    error("YX-Beautify: 未找到 WindUI。请先执行主脚本后再加载此模块！")
 end
 
-YXTheme.onChange(function(name)
-    if isAllowedTheme(name) then
-        ThemeMemory.save(name)
-    end
-end)
+local Window = _G.Window
+local YXTheme = _G.YXTheme
+local addGradientBorder = _G.addGradientBorder
+local wallpaperFor = _G.wallpaperFor
+local onEnterTheme = _G.onEnterTheme
+local THEME_BACKGROUNDS = _G.THEME_BACKGROUNDS
 
+-- ==========================================
+-- 1. 背景图自动加载与切换
+-- ==========================================
 do
     local assetCache   = {}
     local pending      = {}
@@ -564,9 +221,11 @@ do
     end)
 end
 
+-- ==========================================
+-- 2. 标签页边框模块
+-- ==========================================
 do
     local RunService = game:GetService("RunService")
-
     local borders = {}
 
     local function addBorder(tabBtn)
@@ -623,6 +282,9 @@ do
     end)
 end
 
+-- ==========================================
+-- 3. 打开按钮模块
+-- ==========================================
 do
     local RunService = game:GetService("RunService")
     local btn = Window.OpenButtonMain and Window.OpenButtonMain.Button
@@ -672,6 +334,9 @@ do
     end
 end
 
+-- ==========================================
+-- 4. 窗口边框模块
+-- ==========================================
 do
     local main = Window.UIElements.Main
 
@@ -690,6 +355,9 @@ do
     })
 end
 
+-- ==========================================
+-- 5. 文字颜色自适应
+-- ==========================================
 do
     local guis = {
         WindUI.ScreenGui,
@@ -759,6 +427,9 @@ do
     end)
 end
 
+-- ==========================================
+-- 6. 通知美化模块
+-- ==========================================
 do
     local holder = WindUI.NotificationGui and WindUI.NotificationGui:FindFirstChildWhichIsA("Frame")
     if holder then
@@ -779,9 +450,11 @@ do
     end
 end
 
+-- ==========================================
+-- 7. 顶栏标签渐变模块
+-- ==========================================
 do
     local RunService = game:GetService("RunService")
-
     local holder = Window.UIElements.Main.Main.Topbar.Center.Holder
     local tagGrads = {}
 
@@ -854,6 +527,9 @@ do
     end)
 end
 
+-- ==========================================
+-- 8. 对话框专属边框模块
+-- ==========================================
 do
     local seq = 0
     local ATTACHED = "YXDialogBorderAttached"
