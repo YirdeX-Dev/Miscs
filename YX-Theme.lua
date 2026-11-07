@@ -144,7 +144,6 @@ WindUI:AddTheme({
         ["0"]   = { Color = Color3.fromHex("#F8C5CF"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
     }, { Rotation = 135 }),
-    -- 【明亮版】高饱和桃红+纯白，不掺暗色
     Icon = WindUI:Gradient({
         ["0"]   = { Color = Color3.fromHex("#FF4081"), Transparency = 0 }, 
         ["50"]  = { Color = Color3.fromHex("#FF80AB"), Transparency = 0 }, 
@@ -175,7 +174,6 @@ WindUI:AddTheme({
         ["0"]   = { Color = Color3.fromHex("#7C42D9"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#3E2B7E"), Transparency = 0 },
     }, { Rotation = 135 }),
-    -- 【明亮版】荧光紫+极浅紫+纯白，非常有少女感
     Icon = WindUI:Gradient({
         ["0"]   = { Color = Color3.fromHex("#E040FB"), Transparency = 0 }, 
         ["50"]  = { Color = Color3.fromHex("#EA80FC"), Transparency = 0 }, 
@@ -206,11 +204,10 @@ WindUI:AddTheme({
         ["0"]   = { Color = Color3.fromHex("#607DB7"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#2A386B"), Transparency = 0 },
     }, { Rotation = 135 }),
-    -- 【明亮版】亮天蓝+冰蓝+纯白
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#00B0FF"), Transparency = 0 }, 
-        ["50"]  = { Color = Color3.fromHex("#80D8FF"), Transparency = 0 }, 
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+        ["0"]   = { Color = Color3.fromHex("#1A365D"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#607DB7"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#A7BCDE"), Transparency = 0 }, 
     }, { Rotation = 135 }),
 })
 
@@ -237,7 +234,6 @@ WindUI:AddTheme({
         ["0"]   = { Color = Color3.fromHex("#AC6549"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#81423F"), Transparency = 0 },
     }, { Rotation = 135 }),
-    -- 【明亮版】亮橘棕+浅奶茶色+纯白，很有光泽
     Icon = WindUI:Gradient({
         ["0"]   = { Color = Color3.fromHex("#FF7043"), Transparency = 0 }, 
         ["50"]  = { Color = Color3.fromHex("#FFAB91"), Transparency = 0 }, 
@@ -268,11 +264,10 @@ WindUI:AddTheme({
         ["0"]   = { Color = Color3.fromHex("#F8D050"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#BE832B"), Transparency = 0 },
     }, { Rotation = 135 }),
-    -- 【明亮版】亮金色+浅米黄+纯白，非常耀眼
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#FFC107"), Transparency = 0 }, 
-        ["50"]  = { Color = Color3.fromHex("#FFE082"), Transparency = 0 }, 
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+        ["0"]   = { Color = Color3.fromHex("#8B5A2B"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#D4A373"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#F8D050"), Transparency = 0 }, 
     }, { Rotation = 135 }),
 })
 
