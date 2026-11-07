@@ -1,3 +1,6 @@
+-- YX-Theme.lua（链接版）
+-- 依赖：主脚本在加载本库之前必须写 _G.WindUI = WindUI
+-- 导出：9 个符号到 _G，供主脚本与美化模块使用
 local WindUI = _G.WindUI
 if not WindUI then
     error("YX-Themes: 缺失 _G.WindUI（主脚本须先写 _G.WindUI = WindUI）")
@@ -39,7 +42,11 @@ end
 local savedTheme = ThemeMemory.load() or "YX-Wind"
 
 local THEME_BACKGROUNDS = {
-    ["YX-Wind"]      = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261018_172319.jpg",
+    ["YX-Wind"]      = {
+        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261018_172319.jpg",
+        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/%E3%80%90%E5%93%B2%E9%A3%8E%E5%A3%81%E7%BA%B8%E3%80%91%E4%BA%8C%E6%AC%A1%E5%85%83-%E5%8E%9F%E7%A5%9E-%E6%B0%94%E6%B3%A1.jpg",
+        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
+    },
     ["YX-PinkWhite"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E5%85%AB%E9%87%8D%E7%A5%9E%E5%AD%90%E6%A8%B1%E8%8A%B14K%E5%A3%81%E7%BA%B8.jpg",
     ["YX-PurpleWhite"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E9%9B%B7%E7%94%B5%E5%B0%86%E5%86%9B%20%E5%8E%9F%E7%A5%9E%204K%20%E5%A3%81%E7%BA%B8.jpg",
     ["YX-CyanWhite"]   = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E7%94%98%E9%9B%A8%20%E5%8E%9F%E7%A5%9E%204K%20%E9%AB%98%E6%B8%85%E5%A3%81%E7%BA%B8.jpg",
@@ -108,10 +115,10 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#0D47A1"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#00FFFF"), Transparency = 0 }, 
-        ["50"]  = { Color = Color3.fromHex("#E0FFFF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
-    }, { Rotation = 135 }),
+        ["0"]   = { Color = Color3.fromHex("#05222E"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#093E55"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#0D5B7D"), Transparency = 0 },
+    }, { Rotation = 45 }),
 })
 
 WindUI:AddTheme({
@@ -138,9 +145,9 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#280B15"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#6D1F39"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#B2335E"), Transparency = 0 },
     }, { Rotation = 45 }),
 })
 
@@ -168,9 +175,9 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#3E2B7E"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#A770DA"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#C1A3DA"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#B481E4"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#CFAFEE"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#EBDDF8"), Transparency = 0 },
     }, { Rotation = 45 }),
 })
 
@@ -198,10 +205,10 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#2A386B"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#1A365D"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#809BCB"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
-    }, { Rotation = 135 }),
+        ["0"]   = { Color = Color3.fromHex("#09162A"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#163669"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#2457A8"), Transparency = 0 },
+    }, { Rotation = 45 }),
 })
 
 WindUI:AddTheme({
@@ -228,9 +235,9 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#81423F"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#C4845D"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#E2C4B7"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#ECBB97"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#F2D2BA"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#F9E8DC"), Transparency = 0 },
     }, { Rotation = 45 }),
 })
 
@@ -258,10 +265,10 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#BE832B"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#8B5A2B"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#F8D050"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
-    }, { Rotation = 135 }),
+        ["0"]   = { Color = Color3.fromHex("#271B0C"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#5E411C"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#95672D"), Transparency = 0 },
+    }, { Rotation = 45 }),
 })
 
 local YXTheme = (function()
