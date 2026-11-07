@@ -108,10 +108,10 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#0D47A1"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#00FFFF"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#80D8FF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#E1F5FE"), Transparency = 0 },
-    }, { Rotation = 45 }),
+        ["0"]   = { Color = Color3.fromHex("#00FFFF"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#E0FFFF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+    }, { Rotation = 135 }),
 })
 
 WindUI:AddTheme({
