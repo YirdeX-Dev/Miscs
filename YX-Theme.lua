@@ -145,10 +145,10 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#280B15"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#6D1F39"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#B2335E"), Transparency = 0 },
-    }, { Rotation = 45 }),
+        ["0"]   = { Color = Color3.fromHex("#9E2252"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#D84076"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#F48FB1"), Transparency = 0 },
+    }, { Rotation = 135 }),
 })
 
 WindUI:AddTheme({
@@ -175,11 +175,12 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#3E2B7E"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#B481E4"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#CFAFEE"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#EBDDF8"), Transparency = 0 },
-    }, { Rotation = 45 }),
+        ["0"]   = { Color = Color3.fromHex("#3F1A7A"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#7C42D9"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#D3B8F5"), Transparency = 0 },
+    }, { Rotation = 135 }),
 })
+
 WindUI:AddTheme({
     Name = "YX-CyanWhite",
     Accent = WindUI:Gradient({
@@ -234,10 +235,10 @@ WindUI:AddTheme({
         ["100"] = { Color = Color3.fromHex("#81423F"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#C4845D"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#E2C4B7"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
-    }, { Rotation = 45 }),
+        ["0"]   = { Color = Color3.fromHex("#4A1E13"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#AC6549"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#E2C4B7"), Transparency = 0 },
+    }, { Rotation = 135 }),
 })
 
 WindUI:AddTheme({
