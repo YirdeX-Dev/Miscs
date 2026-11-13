@@ -1,3 +1,7 @@
+--[[YirdeX制作 | 开源 | 适配Wind UI美化模块
+请不要当卑鄙的盗用者或者倒卖者]]
+
+
 local WindUI = _G.WindUI
 if not WindUI then
     error("YX-Beautify: 未找到 WindUI。请先执行主脚本后再加载此模块！")
