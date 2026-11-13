@@ -2622,3 +2622,283 @@ local YXTitleFlow = (function(Library)
 end)(Library)
 
 YXTitleFlow:Enable()
+-- ============================================================================
+-- 液态玻璃（移植自 SyndromeXph/Obsidian 新版库 Library.lua 的 "Liquid Glass"）
+--   库内位置：294-301 行配置 / 1593-1644 行 ApplyLiquidGlass + AddGlassSheen /
+--             1646-1681 行 SetWorldGlass / 1789-1821 行 Lighting 特效。
+--   本次按需求只采用其中两块，不做「世界模糊 / 压暗」（不创建 BlurEffect、
+--     ColorCorrectionEffect，也不改 Lighting）：
+--     1) AddGlassSheen    -> 窗口 MainFrame 上的斜向玻璃高光层（完全照搬库实现）
+--     2) ApplyLiquidGlass -> 窗口内 BackgroundColor / MainColor 面板半透明化
+--   当前主脚本用的是 deividcomsono 旧库，没有内建这些；ApplyLiquidGlass 原本挂在
+--   库内部 New() 上，外部拦不到，这里改成「低频扫描窗口后代 + 双路判定」近似复刻：
+--     · 路 A：读 Library.Registry[obj].BackgroundColor3 的键（与库原版判定一致）
+--     · 路 B：底色是否接近 Library.Scheme.BackgroundColor / MainColor
+--             （美化模块会改写部分 Registry 键，路 B 保证这种情况仍能命中）
+--   不碰窗口 MainFrame 本体：它后面有辉光遮心板（不透明），半透过去也看不到效果。
+-- ============================================================================
+local YXLiquidGlass = (function(Library)
+    local M = {}
+
+    M.Glass = {
+        Enabled           = true,
+
+        -- 1) 面板半透明化 -------------------------------------------------
+        Transparency      = 0.5,   -- 与库 GlassTransparency 一致
+        IncludeMainFrame  = false, -- 窗口本体后面有辉光遮心板，半透也看不到效果
+        OnlyOpaque        = true,  -- 只接管当前完全不透明的面板，不破坏控件自设透明度
+        ScanInterval      = 0.35,  -- 运行时新增控件（下拉 / 通知等）补扫间隔
+        ColorTolerance    = 0.08,  -- 主题底色近似匹配容差
+
+        -- 2) 窗口玻璃高光层 ---------------------------------------------
+        SheenEnabled      = true,
+        SheenName         = "YXLiquidGlassSheen",
+        SheenZIndex       = 0,     -- 与库一致；若被背景图压住可调到 990 左右
+        SheenRotation     = 112,   -- 库原版斜向角度
+        SheenColors       = { { 255, 255, 255 }, { 200, 214, 255 }, { 36, 42, 70 } },
+        SheenStops        = { 0, 0.4, 1 },
+        SheenTransparency = { { 0, 0.7 }, { 0.42, 0.88 }, { 1, 0.97 } },
+        SheenFollowTheme  = false, -- 玻璃反光是中性高光，默认不随主题；true 则混入主题强调色
+    }
+
+    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
+    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
+
+    local Conn = nil
+    local Sheen, SheenCorner, SheenGrad = nil, nil, nil
+    local BoundMF, SheenSig = nil, nil
+    local Processed = setmetatable({}, { __mode = "k" })
+    local Origins   = setmetatable({}, { __mode = "k" })
+    local ScanAcc, LastFrame = 0, 0
+
+    local function GetMainFrame()
+        if not (Library and Library.Window) then return nil end
+        local mf = Library.Window.MainFrame
+        if mf and mf.Parent then return mf end
+        return nil
+    end
+
+    local function IsAlive(O)
+        if not O then return false end
+        local Ok, P = pcall(function() return O.Parent end)
+        return Ok and P ~= nil
+    end
+
+    -- 面板判定：Registry 键（库原版逻辑） + 当前底色接近主题 BackgroundColor / MainColor
+    local function IsPanel(Obj)
+        local Reg = Library.Registry and Library.Registry[Obj]
+        local Key = Reg and Reg.BackgroundColor3
+        if type(Key) == "function" then return true end
+        if type(Key) == "string" and (Key == "BackgroundColor" or Key == "MainColor") then
+            return true
+        end
+        local C, S = Obj.BackgroundColor3, Library.Scheme
+        if not (C and S) then return false end
+        local Tol = M.Glass.ColorTolerance or 0.08
+        for _, Name in ipairs({ "BackgroundColor", "MainColor" }) do
+            local T = S[Name]
+            if T and math.abs(C.R - T.R) < Tol
+                  and math.abs(C.G - T.G) < Tol
+                  and math.abs(C.B - T.B) < Tol then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- 返回 true = 以后不用再判断这个对象；false = 属性还没就绪，下轮重试
+    local function ApplyOne(Obj, mf)
+        if Obj == mf and not M.Glass.IncludeMainFrame then return true end
+        if Obj == Sheen then return true end
+        local Ok, Handled = pcall(function()
+            if not Obj:IsA("GuiObject") then return true end
+            local BT = Obj.BackgroundTransparency
+            if type(BT) ~= "number" then return false end
+            if BT >= 1 then return true end                       -- 本来就全透，跳过
+            if M.Glass.OnlyOpaque and BT > 0.01 then return true end -- 控件自设透明度，别动
+            if not IsPanel(Obj) then return true end
+            Origins[Obj] = BT
+            Obj.BackgroundTransparency = M.Glass.Transparency
+            return true
+        end)
+        return (Ok and Handled) or false
+    end
+
+    local function Scan()
+        local mf = GetMainFrame()
+        if not mf then return end
+        BoundMF = mf
+        pcall(function()
+            for _, Obj in ipairs(mf:GetDescendants()) do
+                if not Processed[Obj] then
+                    if ApplyOne(Obj, mf) then Processed[Obj] = true end
+                end
+            end
+        end)
+    end
+
+    local function BuildSheenColors()
+        local C = M.Glass.SheenColors
+        local function ToColor(T) return Color3.fromRGB(T[1], T[2], T[3]) end
+        local A, B, D = ToColor(C[1]), ToColor(C[2]), ToColor(C[3])
+        if M.Glass.SheenFollowTheme then
+            local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
+            if Ok and RGB then
+                local Acc = Color3.new(RGB[1], RGB[2], RGB[3])
+                B = Color3.new((B.R + Acc.R) / 2, (B.G + Acc.G) / 2, (B.B + Acc.B) / 2)
+            end
+        end
+        return A, B, D
+    end
+
+    local function NewSheen(mf)
+        local G = M.Glass
+        local S = Instance.new("Frame")
+        S.Name = G.SheenName
+        S.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        S.BackgroundTransparency = 0
+        S.BorderSizePixel = 0
+        S.Size = UDim2.fromScale(1, 1)
+        S.Active = false
+        S.ZIndex = G.SheenZIndex
+        S.Parent = mf
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, Library.CornerRadius or 4)
+        Corner.Parent = S
+        if type(Library.Corners) == "table" then
+            table.insert(Library.Corners, Corner)
+        end
+
+        local A, B, D = BuildSheenColors()
+        local St, Tr = G.SheenStops, G.SheenTransparency
+        local Grad = Instance.new("UIGradient")
+        Grad.Rotation = G.SheenRotation
+        Grad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(St[1], A),
+            ColorSequenceKeypoint.new(St[2], B),
+            ColorSequenceKeypoint.new(St[3], D),
+        })
+        Grad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(Tr[1][1], Tr[1][2]),
+            NumberSequenceKeypoint.new(Tr[2][1], Tr[2][2]),
+            NumberSequenceKeypoint.new(Tr[3][1], Tr[3][2]),
+        })
+        Grad.Parent = S
+        return S, Corner, Grad
+    end
+
+    local function RemoveSheen()
+        if SheenCorner and type(Library.Corners) == "table" then
+            for i = #Library.Corners, 1, -1 do
+                if Library.Corners[i] == SheenCorner then
+                    table.remove(Library.Corners, i)
+                end
+            end
+        end
+        if Sheen then pcall(function() Sheen:Destroy() end) end
+        Sheen, SheenCorner, SheenGrad = nil, nil, nil
+    end
+
+    local function Restore()
+        for Obj, Old in pairs(Origins) do
+            pcall(function() Obj.BackgroundTransparency = Old end)
+            Origins[Obj] = nil
+        end
+        Processed = setmetatable({}, { __mode = "k" })
+    end
+
+    local function ThemeSignature()
+        if not M.Glass.SheenFollowTheme then return nil end
+        local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
+        if not (Ok and RGB) then return nil end
+        return string.format("%.3f,%.3f,%.3f", RGB[1], RGB[2], RGB[3])
+    end
+
+    local function Tick(dt)
+        if not M.Glass.Enabled then return end
+        local Now = os.clock()
+        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - LastFrame)
+        if Step < 0 then Step = 0 end
+        if Step > 0.2 then Step = 0.2 end
+        LastFrame = Now
+        ScanAcc = ScanAcc + Step
+        if ScanAcc < M.Glass.ScanInterval then return end
+        ScanAcc = 0
+
+        local mf = GetMainFrame()
+        if not mf then
+            RemoveSheen(); BoundMF = nil
+            return
+        end
+        if BoundMF ~= mf then               -- 窗口被重建
+            RemoveSheen()
+            Processed = setmetatable({}, { __mode = "k" })
+            Origins   = setmetatable({}, { __mode = "k" })
+            BoundMF = mf
+        end
+        if M.Glass.SheenEnabled and not IsAlive(Sheen) then
+            Sheen, SheenCorner, SheenGrad = NewSheen(mf)
+        elseif not M.Glass.SheenEnabled and IsAlive(Sheen) then
+            RemoveSheen()
+        end
+        Scan()
+        if SheenGrad and M.Glass.SheenFollowTheme then
+            local Sig = ThemeSignature()
+            if Sig and Sig ~= SheenSig then
+                SheenSig = Sig
+                local A, B, D = BuildSheenColors()
+                local St = M.Glass.SheenStops
+                pcall(function()
+                    SheenGrad.Color = ColorSequence.new({
+                        ColorSequenceKeypoint.new(St[1], A),
+                        ColorSequenceKeypoint.new(St[2], B),
+                        ColorSequenceKeypoint.new(St[3], D),
+                    })
+                end)
+            end
+        end
+    end
+
+    function M:Enable()
+        M.Glass.Enabled = true
+        if not Heartbeat or Conn then return self end
+        LastFrame = os.clock()
+        local Ok, C = pcall(function()
+            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
+        end)
+        if Ok then Conn = C end
+        local mf = GetMainFrame()
+        if mf then
+            BoundMF = mf
+            if M.Glass.SheenEnabled then
+                Sheen, SheenCorner, SheenGrad = NewSheen(mf)
+            end
+            Scan()
+        end
+        return self
+    end
+
+    function M:Disable()
+        M.Glass.Enabled = false
+        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
+        RemoveSheen()
+        Restore()
+        BoundMF, SheenSig = nil, nil
+        return self
+    end
+
+    function M:SetTransparency(V)
+        if type(V) == "number" then
+            M.Glass.Transparency = V
+            for Obj in pairs(Origins) do
+                pcall(function() Obj.BackgroundTransparency = V end)
+            end
+        end
+        return self
+    end
+
+    return M
+end)(Library)
+
+YXLiquidGlass:Enable()
