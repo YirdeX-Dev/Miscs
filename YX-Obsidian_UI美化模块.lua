@@ -2,30 +2,25 @@
 
 
 -- ============================================================================
--- YX · UI 美化模块   ——   全体文字「渐变流光」（库原生原理版）
+-- YX · UI 美化模块   ——   仅指定文本「渐变流光」（库原生原理版）
 -- ----------------------------------------------------------------------------
--- 【本版改动】之前所有自研的流光实现（逐词拆分 / 逐字 RichText 染色 / 白名单
---   驱动 / 只建一次色带再平移 Offset / 全流动修复版 …）已【全部删除】。
---   现只保留一套：1:1 照搬 SyndromeXph/Obsidian 新版库 Library.lua 里那段
---   「渐变流光字」的原理，把它从只作用于 WindowTitle / FooterLabel 两个 Label，
---   直接扩展为作用于 ScreenGui 下【所有】文字（TextLabel / TextButton / TextBox）
---   与小图标（ImageLabel / ImageButton）。
+-- 【本版改动】把上一版「ScreenGui 下所有文字 + 小图标」的流光收窄为只作用于
+--   4 组文本（见文件末尾 YXLibTextFlow 的 M.TargetTexts）：
+--     ① CreateWindow 的 Title
+--     ② CreateWindow 的 Footer
+--     ③ 标签页 Name
+--     ④ 标签页 Description
+--   其余所有文字（开发者名单、分组标题、设置项、通知、下拉…）以及所有图标，
+--   一律【不挂 UIGradient、不刷白基底】，完全交给库的主题色 Registry 管理。
 --
--- 【库原版位置】
---   319-336     MakeVioletBlackGradient(Shift)：4 个关键点，sin + Lerp
---   11022-11056 窗口标题：UIGradient + 每帧 RenderStepped 重建 ColorSequence
---                        + WindowTitle.TextColor3 = Color3.new(1,1,1)（白基底）
---   11234-11248 页脚：每帧重建 ColorSequence + Offset 横向平移 + Rotation 摆动
+-- 【流光算法】1:1 采用 SyndromeXph/Obsidian 新版库 Library.lua 那段：
+--   319-336     MakeVioletBlackGradient：4 关键点 sin + Lerp
+--   11022-11056 标题：每帧 RenderStepped 重建 ColorSequence + 强制白字基底
+--   11234-11248 页脚：每帧重建 + Offset 横向平移 + Rotation 摆动
+--   核心是【每帧重新构造整个 ColorSequence】，不是只建一次色带平移 Offset。
 --
--- 【为什么之前"不流动/硬邦邦/只有两边颜色中间白"】
---   库是【每帧重新构造整个 ColorSequence】，颜色序列本身在随时间变化；
---   之前那版只建一次色带、靠平移 Offset 假装流动，真机上就是不动。
---   本版严格照抄库：每帧重建。并且全场共用一个相位，不再有多套循环互相
---   抢改同一个 UIGradient。
---
--- 【配色】默认在「主题强调色 ↔ 亮白」之间柔和流动，暗端不压到纯黑，
---   避免一暗一白；跟随 Library.Scheme.AccentColor，切主题自动换色。
---   想用库原版紫黑：把 M.UseLibraryPalette 改成 true。
+-- 【配色 / 速度】沿用上一版的「明亮 + 加速」参数；想完全回到库原版紫黑 + 原速：
+--   M.UseLibraryPalette = true，M.Speed = 0.28，M.OffsetSpeed = 0.28。
 --
 -- 【用法】主脚本 BEAUTIFY_URL 指向本文件即可，主脚本无需改动。
 --   加载器签名固定：Loader(Library, ThemeManager, SaveManager)
@@ -2695,7 +2690,7 @@ YXLiquidGlass:Enable()
 
 
 -- ============================================================================
--- 全体文字 / 图标 渐变流光   ——   原理 1:1 移植自新版库 Library.lua
+-- 指定 4 组文本 渐变流光   ——   算法 1:1 移植自新版库 Library.lua
 -- ============================================================================
 local YXLibTextFlow = (function(Library)
     local M = {}
@@ -2731,18 +2726,26 @@ local YXLibTextFlow = (function(Library)
                                      --    也不会出现固定纯白中点（"一暗一白"已中和）
     M.UseLibraryPalette  = false     -- ⑩ true=切回库原版紫黑三色，便于和库逐帧对照
 
-    -- ===== 覆盖范围 =====
-    M.ScanInterval       = 0.5       -- 动态补扫间隔（下拉 / 通知 / 对话框运行时创建）
-    M.ThemeInterval      = 0.3       -- 主题强调色重取间隔
-    M.IncludeIcons       = true      -- 图标一起流动
-    M.IncludeTextBox     = true      -- 输入框文字也一起流动
-    M.IconMaxSize        = 64        -- 超过此边长的图片视为背景图 / 大图，跳过
-    M.TakeOverExisting   = true      -- 复用对象上已有的那条 UIGradient；一个 GuiObject
-                                     -- 挂两条 UIGradient 时引擎只认一条、互相打架，
-                                     -- 复用同一条 + 每帧最后写入，才能真流动
-    M.WhiteBase          = true      -- 每帧强制白字基底（库同款；相乘时白 = 恒等元）
-    M.KeepRichTextColor  = true      -- 含 <font color=...> 的文字保留内联色，只让渐变相乘
-    M.IconWhiteBase      = true      -- 图标也铺白基底，否则渐变与图标原色相乘会发暗/偏色
+    -- ===== 作用范围：只有下面这 4 组文本会流光，其它一律主题色 =====
+    -- 精确匹配完整文本。支持两种写法：["文本"] = true  或  { "文本", "文本" }。
+    -- 换脚本 / 改文案时，只改这里即可。
+    M.TargetTexts = {
+        ["YX-Loader"] = true,                      -- ① CreateWindow Title
+        ["YX-Loader | 仍在开发中"] = true,          -- ② CreateWindow Footer
+        ["主页"] = true,                           -- ③ 标签页 Name
+        ["脚本主页与更新公告"] = true,              -- ④ 标签页 Description
+        -- 兼容当前主脚本里另一套命名（同一个角色，不算额外文本）
+        ["主要&信息"] = true,
+        ["YX-SCRPIT信息"] = true,
+    }
+    M.AutoTabNames       = false    -- true=自动把 Library.TabButtons 里所有标签页名
+                                    --     纳入白名单（多标签页时免手填，但会扩大范围）
+    M.ScanInterval       = 0.5     -- 动态补扫间隔（切换标签 / 通知 / 对话框）
+    M.ThemeInterval      = 0.3     -- 主题强调色重取间隔
+    M.TakeOverExisting   = true    -- 复用对象上已有的 UIGradient；一个 GuiObject 挂
+                                    -- 两条会互相打架，复用同一条才能真流动
+    M.WhiteBase          = true    -- 每帧强制白字基底（库同款；相乘时白 = 恒等元）
+    M.KeepRichTextColor  = true    -- 含 <font color=...> 的文字保留内联色
 
     -- ---------------------- 内部状态 ----------------------
     local FALLBACK_ACCENT = Color3.fromRGB(130, 200, 248)
@@ -2766,11 +2769,6 @@ local YXLibTextFlow = (function(Library)
 
     local function IsTextObject(Object)
         return Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox")
-    end
-
-    local function IsIconObject(Object)
-        if not M.IncludeIcons then return false end
-        return Object:IsA("ImageLabel") or Object:IsA("ImageButton")
     end
 
     -- 辉光 / 玻璃高光 / 背景 / 模糊 / 遮罩 等装饰层不参与（辉光不是背景图）
@@ -2843,13 +2841,34 @@ local YXLibTextFlow = (function(Library)
         })
     end
 
-    -- ---------------------- 目标筛选 ----------------------
+    -- ---------------------- 目标筛选：精确文本白名单 ----------------------
+    local Wanted = {}   -- [string] = true
+
+    local function RebuildWanted()
+        for K in pairs(Wanted) do Wanted[K] = nil end
+        for K, V in pairs(M.TargetTexts or {}) do
+            if type(K) == "number" and type(V) == "string" then
+                Wanted[V] = true                       -- 数组写法 { "文本", ... }
+            elseif type(K) == "string" and V then
+                Wanted[K] = true                       -- 集合写法 ["文本"] = true
+            end
+        end
+        if M.AutoTabNames then
+            pcall(function()
+                for _, B in ipairs(Library.TabButtons or {}) do
+                    local L = B and B.Label
+                    if L then
+                        local Ok, T = pcall(function() return L.Text end)
+                        if Ok and type(T) == "string" and T ~= "" then Wanted[T] = true end
+                    end
+                end
+            end)
+        end
+    end
+
     local function Eligible(Object)
         if not M.Enabled or Seen[Object] then return false end
-        local IsText = IsTextObject(Object)
-        local IsIcon = IsIconObject(Object)
-        if not (IsText or IsIcon) then return false end
-        if Object:IsA("TextBox") and not M.IncludeTextBox then return false end
+        if not IsTextObject(Object) then return false end   -- 图标 / 其它一律不参与
         if NameBlocked(Object) then return false end
 
         -- 父级链同判（避免辉光 / 玻璃高光容器下的东西被误挂）
@@ -2860,17 +2879,13 @@ local YXLibTextFlow = (function(Library)
             Depth = Depth + 1
         end
 
-        if IsText then
-            local Tr = SafeGet(Object, "TextTransparency")
-            if Tr and Tr >= 0.99 then return false end       -- 全透明占位
-            local Tx = SafeGet(Object, "Text")
-            if Tx == nil or Tx == "" then return false end
-        else
-            local Tr = SafeGet(Object, "ImageTransparency")
-            if Tr and Tr >= 0.99 then return false end
-            local Sz = SafeGet(Object, "AbsoluteSize")
-            if Sz and (Sz.X > M.IconMaxSize or Sz.Y > M.IconMaxSize) then return false end
-        end
+        -- ★ 核心：只有文本精确命中白名单才流光，其余全部保持库的主题色
+        local Tx = SafeGet(Object, "Text")
+        if type(Tx) ~= "string" or Tx == "" then return false end
+        if not Wanted[Tx] then return false end
+
+        local Tr = SafeGet(Object, "TextTransparency")
+        if Tr and Tr >= 0.99 then return false end          -- 全透明占位
         return true
     end
 
@@ -2925,6 +2940,7 @@ local YXLibTextFlow = (function(Library)
 
     local function Scan()
         if Library.Unloaded then return end
+        RebuildWanted()                 -- 标签页可能运行时新增，每次补扫重建白名单
         local Roots = CollectRoots({})
         for _, Root in ipairs(Roots) do
             if not BoundRoot[Root] then
@@ -2987,12 +3003,9 @@ local YXLibTextFlow = (function(Library)
                     Grad.Offset = Off
                     -- ② 白基底：UIGradient 与文字像素相乘，白是恒等元；
                     --    库每帧也强制刷白，用来对抗 UpdateColorsUsingRegistry 刷回主题色。
-                    if IsTextObject(Object) then
-                        if M.WhiteBase and not (M.KeepRichTextColor and FontTag[Object]) then
-                            Object.TextColor3 = WHITE
-                        end
-                    elseif M.IconWhiteBase then
-                        Object.ImageColor3 = WHITE
+                    --    只有命中的这 4 组文本会走到这里，其它文字颜色完全不动。
+                    if M.WhiteBase and not (M.KeepRichTextColor and FontTag[Object]) then
+                        Object.TextColor3 = WHITE
                     end
                 end)
             end
@@ -3053,6 +3066,14 @@ local YXLibTextFlow = (function(Library)
     function M:SetPalette(UseLibrary)
         M.UseLibraryPalette = UseLibrary and true or false
         pcall(BuildPalette)
+        return self
+    end
+    function M:SetTargets(T)        -- 运行时换目标文本，例如 :SetTargets{"新标题", "新页脚"}
+        if type(T) ~= "table" then return self end
+        M.TargetTexts = T
+        pcall(RebuildWanted)
+        for K in pairs(Seen) do Seen[K] = nil end
+        pcall(Scan)
         return self
     end
 
