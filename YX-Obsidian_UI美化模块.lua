@@ -1,6 +1,35 @@
 --[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块 可以二改 ，请不要当卑鄙的盗用者或者倒卖者]]
 
 
+-- ============================================================================
+-- YX · UI 美化模块   ——   全体文字「渐变流光」（库原生原理版）
+-- ----------------------------------------------------------------------------
+-- 【本版改动】之前所有自研的流光实现（逐词拆分 / 逐字 RichText 染色 / 白名单
+--   驱动 / 只建一次色带再平移 Offset / 全流动修复版 …）已【全部删除】。
+--   现只保留一套：1:1 照搬 SyndromeXph/Obsidian 新版库 Library.lua 里那段
+--   「渐变流光字」的原理，把它从只作用于 WindowTitle / FooterLabel 两个 Label，
+--   直接扩展为作用于 ScreenGui 下【所有】文字（TextLabel / TextButton / TextBox）
+--   与小图标（ImageLabel / ImageButton）。
+--
+-- 【库原版位置】
+--   319-336     MakeVioletBlackGradient(Shift)：4 个关键点，sin + Lerp
+--   11022-11056 窗口标题：UIGradient + 每帧 RenderStepped 重建 ColorSequence
+--                        + WindowTitle.TextColor3 = Color3.new(1,1,1)（白基底）
+--   11234-11248 页脚：每帧重建 ColorSequence + Offset 横向平移 + Rotation 摆动
+--
+-- 【为什么之前"不流动/硬邦邦/只有两边颜色中间白"】
+--   库是【每帧重新构造整个 ColorSequence】，颜色序列本身在随时间变化；
+--   之前那版只建一次色带、靠平移 Offset 假装流动，真机上就是不动。
+--   本版严格照抄库：每帧重建。并且全场共用一个相位，不再有多套循环互相
+--   抢改同一个 UIGradient。
+--
+-- 【配色】默认在「主题强调色 ↔ 亮白」之间柔和流动，暗端不压到纯黑，
+--   避免一暗一白；跟随 Library.Scheme.AccentColor，切主题自动换色。
+--   想用库原版紫黑：把 M.UseLibraryPalette 改成 true。
+--
+-- 【用法】主脚本 BEAUTIFY_URL 指向本文件即可，主脚本无需改动。
+--   加载器签名固定：Loader(Library, ThemeManager, SaveManager)
+-- ============================================================================
 local Library, ThemeManager, SaveManager = ...
 
 if not Library then
@@ -2672,26 +2701,48 @@ local YXLibTextFlow = (function(Library)
     local M = {}
 
     -- ---------------------- 可调配置 ----------------------
+    -- 【库 Library.lua 原生流光字参数对照】下面每项都与库一一对应，改这里 = 改库那个效果：
+    --   颜色常量  Violet(148,0,211) / SoftViolet(186,85,255) / PureBlack(0,0,0)   [318-320 行]
+    --   关键点    0 / 0.33 / 0.66 / 1                                             [330-333 行]
+    --   相位      0 / 1.2 / 2.4 / 3.6（步长 1.2）                                [325-328 行]
+    --   颜色速度  标题 os.clock()*0.25 / 页脚 *0.28 / 通知进度条 *0.35            [11053/11245/10715 行]
+    --   横向平移  页脚 (Clock*0.28)%2-1                                          [11246 行]
+    --   旋转摆动  页脚 sin(Clock*0.85)*16                                        [11247 行]
+    --   驱动      RenderStepped 每帧重建 ColorSequence + 每帧 TextColor3=白      [11049/11241 行]
+    -- 库把这些系数全部写死，这里提成参数；默认值 = 整体提亮 + 整体加速。
     M.Enabled            = true
-    M.Speed              = 0.28      -- 颜色循环速度（库：标题 0.25 / 页脚 0.28）
-    M.OffsetSpeed        = 0.28      -- 色带横向平移速度（库页脚 0.28）
-    M.Sway               = 0         -- Rotation 摆动幅度（库页脚 16；0=不摆，全屏文字更稳）
-    M.Interval           = 1 / 30    -- 刷新间隔，30fps 已足够顺滑；设 0 = 每帧
+
+    -- ===== 速度（默认约为库 2.7 倍，流光明显加快）=====
+    M.Speed              = 0.75      -- ① 颜色循环速度（库 0.25 / 0.28 / 0.35）
+    M.OffsetSpeed        = 0.75      -- ② 色带横向平移速度（库 0.28）
+    M.SwaySpeed          = 1.70      -- ③ 摆动角速度（库 0.85）
+    M.Sway               = 16        -- ④ 摆动幅度，单位度（库 16；0 = 不摆）
+    M.Interval           = 0         -- ⑤ 0 = 每帧，与库 RenderStepped 完全一致；
+                                     --    卡顿可改 1/60 或 1/30（只影响顺滑度，不影响速度）
+
+    -- ===== 波形（库 MakeVioletBlackGradient 的写死值，照搬为参数）=====
+    M.PhaseStep          = 1.2       -- ⑥ 相位步长：0 / 1.2 / 2.4 / 3.6
+    M.Key2               = 0.33      -- ⑦ 第 2 关键点位置
+    M.Key3               = 0.66      -- ⑧ 第 3 关键点位置
+
+    -- ===== 配色（库三色 + 整体提亮）=====
+    M.Brightness         = 0.62      -- ⑨ 整体亮度 0~1：0=强调色原色（偏暗），1=接近纯白
+                                     --    三档全部落在亮区间，暗端不再是纯黑/深蓝灰，
+                                     --    也不会出现固定纯白中点（"一暗一白"已中和）
+    M.UseLibraryPalette  = false     -- ⑩ true=切回库原版紫黑三色，便于和库逐帧对照
+
+    -- ===== 覆盖范围 =====
     M.ScanInterval       = 0.5       -- 动态补扫间隔（下拉 / 通知 / 对话框运行时创建）
     M.ThemeInterval      = 0.3       -- 主题强调色重取间隔
-
-    M.IncludeIcons       = true      -- 图标一起流动（用户上一轮明确要求"包括图标"）
+    M.IncludeIcons       = true      -- 图标一起流动
     M.IncludeTextBox     = true      -- 输入框文字也一起流动
     M.IconMaxSize        = 64        -- 超过此边长的图片视为背景图 / 大图，跳过
-    M.TakeOverExisting   = true      -- 复用对象上已有的那条 UIGradient（旧模块的
-                                     -- YXThemeGradient / YXButtonGradient / YXAccentGradient
-                                     -- 也一起接管）。一个 GuiObject 挂两条 UIGradient 时
-                                     -- 引擎只认一条、互相打架，正是之前"不流动"的元凶之一；
-                                     -- 复用同一条 + 每帧最后写入，才能真正确保流光生效。
-    M.UseLibraryPalette  = false     -- true=库原版紫黑(148,0,211)/(186,85,255)/(0,0,0)
-    M.WhiteBase          = true      -- 每帧强制白字基底（库同款；渐变与文字相乘，白=恒等）
+    M.TakeOverExisting   = true      -- 复用对象上已有的那条 UIGradient；一个 GuiObject
+                                     -- 挂两条 UIGradient 时引擎只认一条、互相打架，
+                                     -- 复用同一条 + 每帧最后写入，才能真流动
+    M.WhiteBase          = true      -- 每帧强制白字基底（库同款；相乘时白 = 恒等元）
     M.KeepRichTextColor  = true      -- 含 <font color=...> 的文字保留内联色，只让渐变相乘
-    M.IconWhiteBase      = true      -- 图标也铺白基底（库同款），否则渐变与图标原色相乘会发暗/偏色
+    M.IconWhiteBase      = true      -- 图标也铺白基底，否则渐变与图标原色相乘会发暗/偏色
 
     -- ---------------------- 内部状态 ----------------------
     local FALLBACK_ACCENT = Color3.fromRGB(130, 200, 248)
@@ -2748,18 +2799,21 @@ local YXLibTextFlow = (function(Library)
 
     local function BuildPalette()
         if M.UseLibraryPalette then
-            Pal.Dark = Color3.fromRGB(0, 0, 0)         -- 库 PureBlackColor
-            Pal.Main = Color3.fromRGB(148, 0, 211)     -- 库 VioletColor
-            Pal.Lite = Color3.fromRGB(186, 85, 255)    -- 库 SoftVioletColor
+            -- 库 Library.lua 318-320 行三个颜色常量，数值逐字节一致
+            Pal.Dark = Color3.fromRGB(0, 0, 0)         -- PureBlackColor
+            Pal.Main = Color3.fromRGB(148, 0, 211)     -- VioletColor
+            Pal.Lite = Color3.fromRGB(186, 85, 255)    -- SoftVioletColor
             return
         end
         local A = ReadAccent()
         local White = Color3.new(1, 1, 1)
-        -- 暗端：强调色向深蓝灰压 45%（不压到纯黑）→ 明暗柔和"中和"
-        -- 亮端：强调色向白提 62%（不刺眼纯白）→ 有颜色、不出现固定白色中点
-        Pal.Dark = A:Lerp(Color3.new(0.12, 0.16, 0.26), 0.45)
-        Pal.Main = A:Lerp(White, 0.10)
-        Pal.Lite = A:Lerp(White, 0.62)
+        local B = math.max(0, math.min(1, M.Brightness))
+        -- 库的 Black/Violet/SoftViolet 三档 → "亮彩 / 浅色 / 高光" 三档：
+        -- 全部由强调色向白 Lerp，最低档也带 B*0.26 提亮，不再压向纯黑/深蓝灰。
+        -- 三档亮度约 0.16 / 0.45 / 0.82，四关键点在其间摆动 = 明亮且仍有流动对比。
+        Pal.Main = A:Lerp(White, B * 0.26)                    -- 强调色主体（最饱和）
+        Pal.Dark = A:Lerp(White, B * 0.72)                    -- 浅色底（取代纯黑）
+        Pal.Lite = A:Lerp(White, math.min(B + 0.20, 0.92))   -- 高光（接近白但留色相）
     end
 
     -- 库 MakeVioletBlackGradient / MakeVioletBlackSequence 原样结构：
@@ -2767,19 +2821,24 @@ local YXLibTextFlow = (function(Library)
     --   c2 = SoftViolet:Lerp(Black,  sin(t*2π + 1.2)  ...)
     --   c3 = Violet:Lerp(Black,      sin(t*2π + 2.4)  ...)
     --   c4 = Black:Lerp(SoftViolet,  sin(t*2π + 3.6)  ...)
-    -- 这里把 Black / Violet / SoftViolet 换成 Pal.Dark / Pal.Main / Pal.Lite。
+    -- 相位步长 / 关键点位置 / 三色都改成上面的 M.* 参数，结构不变、每帧重建。
     local TWO_PI = math.pi * 2
     local function MakeGradient(Shift)
         local t = Shift % 1
-        local S1 = (math.sin(t * TWO_PI)        + 1) * 0.5
-        local S2 = (math.sin(t * TWO_PI + 1.2)  + 1) * 0.5
-        local S3 = (math.sin(t * TWO_PI + 2.4)  + 1) * 0.5
-        local S4 = (math.sin(t * TWO_PI + 3.6)  + 1) * 0.5
+        local P = M.PhaseStep
+        local S1 = (math.sin(t * TWO_PI)         + 1) * 0.5
+        local S2 = (math.sin(t * TWO_PI + P)     + 1) * 0.5
+        local S3 = (math.sin(t * TWO_PI + P * 2) + 1) * 0.5
+        local S4 = (math.sin(t * TWO_PI + P * 3) + 1) * 0.5
         local D, V, L = Pal.Dark, Pal.Main, Pal.Lite
+        -- 夹一下，防止手改参数时关键点乱序导致整条渐变失效（pcall 会静默吞错，
+        -- 表现就是"又不流动了"）
+        local K2 = math.max(0.001, math.min(0.999, M.Key2))
+        local K3 = math.max(K2 + 0.001, math.min(0.999, M.Key3))
         return ColorSequence.new({
             ColorSequenceKeypoint.new(0,    D:Lerp(V, S1)),
-            ColorSequenceKeypoint.new(0.33, L:Lerp(D, S2)),
-            ColorSequenceKeypoint.new(0.66, V:Lerp(D, S3)),
+            ColorSequenceKeypoint.new(K2,   L:Lerp(D, S2)),
+            ColorSequenceKeypoint.new(K3,   V:Lerp(D, S3)),
             ColorSequenceKeypoint.new(1,    D:Lerp(L, S4)),
         })
     end
@@ -2912,7 +2971,7 @@ local YXLibTextFlow = (function(Library)
         local Clock = os.clock()
         local Seq = MakeGradient(Clock * M.Speed)
         local Off = Vector2.new((Clock * M.OffsetSpeed) % 2 - 1, 0)
-        local Rot = (M.Sway ~= 0) and (math.sin(Clock * 0.85) * M.Sway) or 0
+        local Rot = (M.Sway ~= 0) and (math.sin(Clock * M.SwaySpeed) * M.Sway) or 0
 
         for Object, Grad in pairs(Targets) do
             if Object.Parent == nil then
@@ -2976,8 +3035,21 @@ local YXLibTextFlow = (function(Library)
         return self
     end
 
-    -- 运行时改配置可用：YXLibTextFlow:SetSpeed(0.45)
-    function M:SetSpeed(V) M.Speed = V; return self end
+    -- 运行时改配置（数值都对应上面的「库参数对照表」）
+    function M:SetSpeed(V)          -- 一键整体调速：颜色 / 平移 / 摆动按比例联动
+        if type(V) ~= "number" or V <= 0 then return self end
+        local R = V / 0.75
+        M.Speed       = V
+        M.OffsetSpeed = 0.75 * R
+        M.SwaySpeed   = 1.70 * R
+        return self
+    end
+    function M:SetBrightness(V)     -- 0=强调色原色（偏暗），1=接近纯白
+        if type(V) ~= "number" then return self end
+        M.Brightness = math.max(0, math.min(1, V))
+        pcall(BuildPalette)
+        return self
+    end
     function M:SetPalette(UseLibrary)
         M.UseLibraryPalette = UseLibrary and true or false
         pcall(BuildPalette)
