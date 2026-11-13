@@ -2,15 +2,18 @@
 
 
 -- ============================================================================
--- YX · UI 美化模块   ——   仅指定文本「渐变流光」（库原生原理版）
+-- YX · UI 美化模块   ——   所有标签页四要素「渐变流光」（库原生原理版）
 -- ----------------------------------------------------------------------------
--- 【本版改动】把上一版「ScreenGui 下所有文字 + 小图标」的流光收窄为只作用于
---   4 组文本（见文件末尾 YXLibTextFlow 的 M.TargetTexts）：
---     ① CreateWindow 的 Title
---     ② CreateWindow 的 Footer
---     ③ 标签页 Name
---     ④ 标签页 Description
---   其余所有文字（开发者名单、分组标题、设置项、通知、下拉…）以及所有图标，
+-- 【本版改动】流光范围 = 所有标签页的 4 个属性，外加窗口 Title / Footer：
+--     ① Name        侧边栏每个标签按钮的名称文字 + 内容区顶部当前标签名
+--     ② Description 内容区顶部当前标签描述
+--     ③ Icon        侧边栏每个标签按钮的图标（图片 / 字体图标都支持）
+--     ④ Tooltip     悬停标签按钮时出现的提示浮层（全局单例，只对标签页提示生效）
+--   不再写死「主页」等具体文本：每次补扫都从库的数据结构动态收集——
+--     Library.Tabs      （字典）→ 每个标签页的 Name / Description / Tooltip
+--     Library.TabButtons（数组）→ 每个标签按钮的 .Label 名称文字 + .Icon 图标
+--   所以【所有标签页】自动覆盖，新增 / 改名标签页无需改配置。
+--   其余所有文字（开发者名单、分组标题、设置项、通知、下拉…）与未登记图标，
 --   一律【不挂 UIGradient、不刷白基底】，完全交给库的主题色 Registry 管理。
 --
 -- 【流光算法】1:1 采用 SyndromeXph/Obsidian 新版库 Library.lua 那段：
@@ -2726,25 +2729,30 @@ local YXLibTextFlow = (function(Library)
                                      --    也不会出现固定纯白中点（"一暗一白"已中和）
     M.UseLibraryPalette  = false     -- ⑩ true=切回库原版紫黑三色，便于和库逐帧对照
 
-    -- ===== 作用范围：只有下面这 4 组文本会流光，其它一律主题色 =====
-    -- 精确匹配完整文本。支持两种写法：["文本"] = true  或  { "文本", "文本" }。
-    -- 换脚本 / 改文案时，只改这里即可。
-    M.TargetTexts = {
-        ["YX-Loader"] = true,                      -- ① CreateWindow Title
-        ["YX-Loader | 仍在开发中"] = true,          -- ② CreateWindow Footer
-        ["主页"] = true,                           -- ③ 标签页 Name
-        ["脚本主页与更新公告"] = true,              -- ④ 标签页 Description
-        -- 兼容当前主脚本里另一套命名（同一个角色，不算额外文本）
-        ["主要&信息"] = true,
-        ["YX-SCRPIT信息"] = true,
+    -- ===== 作用范围：所有标签页的 Name / Description / Icon / Tooltip =====
+    -- 【不再写死某几个文本】每次补扫都从库的数据结构动态收集：
+    --   Library.Tabs      （字典）→ 每个标签页的 Name / Description / Tooltip
+    --   Library.TabButtons（数组）→ 每个标签按钮的 .Label 名称文字 + .Icon 图标
+    -- 因此「所有标签页」自动覆盖，新增 / 改名标签页无需改配置。
+    -- 内容区顶部的当前标签名 / 描述、悬停 Tooltip 浮层，用文本白名单命中。
+    -- 其余所有文字与未登记图标一律【不挂渐变、不刷白基底】，交给主题色 Registry。
+    M.WindowTexts = {                          -- 窗口级固定文本（Title / Footer）
+        ["YX-Loader"] = true,
+        ["YX-Loader | 仍在开发中"] = true,
     }
-    M.AutoTabNames       = false    -- true=自动把 Library.TabButtons 里所有标签页名
-                                    --     纳入白名单（多标签页时免手填，但会扩大范围）
+    M.AutoTabs           = true    -- 自动收集所有标签页（关掉则只流光 WindowTexts）
+    M.IncludeTabName     = true    -- ① 标签页 Name
+    M.IncludeTabDesc     = true    -- ② 标签页 Description
+    M.IncludeTabIcon     = true    -- ③ 标签页 Icon（图片 / 字体图标都支持）
+    M.IncludeTabTooltip  = true    -- ④ 标签页 Tooltip（悬停浮层）
+    M.OnlyTabTooltips    = true    -- Tooltip 浮层为全局单例：只在显示「标签页提示」
+                                    -- 时流光，其它控件提示保持主题色（原色自动恢复）
     M.ScanInterval       = 0.5     -- 动态补扫间隔（切换标签 / 通知 / 对话框）
     M.ThemeInterval      = 0.3     -- 主题强调色重取间隔
     M.TakeOverExisting   = true    -- 复用对象上已有的 UIGradient；一个 GuiObject 挂
                                     -- 两条会互相打架，复用同一条才能真流动
-    M.WhiteBase          = true    -- 每帧强制白字基底（库同款；相乘时白 = 恒等元）
+    M.WhiteBase          = true    -- 每帧强制白基底（库同款；相乘时白 = 恒等元）
+                                    -- 文本刷 TextColor3，图片图标刷 ImageColor3
     M.KeepRichTextColor  = true    -- 含 <font color=...> 的文字保留内联色
 
     -- ---------------------- 内部状态 ----------------------
@@ -2757,6 +2765,10 @@ local YXLibTextFlow = (function(Library)
     local Seen      = setmetatable({}, { __mode = "k" })   -- 已判定过的对象
     local FontTag   = setmetatable({}, { __mode = "k" })   -- 含 <font color> 的对象
     local BoundRoot = setmetatable({}, { __mode = "k" })   -- 已挂 DescendantAdded 的根
+    local OrigColor = setmetatable({}, { __mode = "k" })   -- Tooltip 浮层原始文字色
+    local WantedText    = {}                               -- 文本白名单 [string]=true
+    local WantedInst    = setmetatable({}, { __mode = "k" }) -- 精确实例（Label / Icon）
+    local TabTooltipText = {}                              -- 所有标签 Tooltip 文本
 
     local Acc, ScanAcc, ThemeAcc = 0, 0, 0
     local Conn, Started, FirstFrame = nil, false, true
@@ -2769,6 +2781,13 @@ local YXLibTextFlow = (function(Library)
 
     local function IsTextObject(Object)
         return Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox")
+    end
+    local function IsImageObject(Object)
+        return Object:IsA("ImageLabel") or Object:IsA("ImageButton")
+    end
+    -- 库全局唯一的悬停提示浮层 TooltipLabel：ZIndex = 30（全库仅此一处）
+    local function IsTooltipLabel(Object)
+        return IsTextObject(Object) and SafeGet(Object, "ZIndex") == 30
     end
 
     -- 辉光 / 玻璃高光 / 背景 / 模糊 / 遮罩 等装饰层不参与（辉光不是背景图）
@@ -2841,34 +2860,60 @@ local YXLibTextFlow = (function(Library)
         })
     end
 
-    -- ---------------------- 目标筛选：精确文本白名单 ----------------------
-    local Wanted = {}   -- [string] = true
+    -- ---------------------- 目标收集：所有标签页四要素 ----------------------
+    local function AddText(T)
+        if type(T) == "string" and T ~= "" then WantedText[T] = true end
+    end
 
-    local function RebuildWanted()
-        for K in pairs(Wanted) do Wanted[K] = nil end
-        for K, V in pairs(M.TargetTexts or {}) do
+    -- 每次补扫重建：标签页可能运行时新增 / 改名，必须动态取，不能写死。
+    local function RebuildTargets()
+        for K in pairs(WantedText) do WantedText[K] = nil end
+        for K in pairs(WantedInst) do WantedInst[K] = nil end
+        for K in pairs(TabTooltipText) do TabTooltipText[K] = nil end
+
+        -- ① 窗口 Title / Footer（固定文本，手填）
+        for K, V in pairs(M.WindowTexts or {}) do
             if type(K) == "number" and type(V) == "string" then
-                Wanted[V] = true                       -- 数组写法 { "文本", ... }
+                AddText(V)                                 -- 数组写法 { "文本", ... }
             elseif type(K) == "string" and V then
-                Wanted[K] = true                       -- 集合写法 ["文本"] = true
+                AddText(K)                                 -- 集合写法 ["文本"] = true
             end
         end
-        if M.AutoTabNames then
-            pcall(function()
-                for _, B in ipairs(Library.TabButtons or {}) do
-                    local L = B and B.Label
-                    if L then
-                        local Ok, T = pcall(function() return L.Text end)
-                        if Ok and type(T) == "string" and T ~= "" then Wanted[T] = true end
+
+        if not M.AutoTabs then return end
+
+        -- ② 所有标签页：Library.Tabs 是字典（TabKey -> Tab），必须用 pairs
+        pcall(function()
+            for _, Tab in pairs(Library.Tabs or {}) do
+                if type(Tab) == "table" then
+                    if M.IncludeTabName then AddText(Tab.Name) end
+                    if M.IncludeTabDesc then AddText(Tab.Description) end
+                    if M.IncludeTabTooltip and type(Tab.Tooltip) == "string" then
+                        AddText(Tab.Tooltip)               -- 也进白名单（双保险）
+                        TabTooltipText[Tab.Tooltip] = true
                     end
                 end
-            end)
-        end
+            end
+        end)
+
+        -- ③ 所有标签按钮：Library.TabButtons 是数组，每项含 .Label / .Icon
+        pcall(function()
+            for _, B in ipairs(Library.TabButtons or {}) do
+                if type(B) == "table" then
+                    if M.IncludeTabName and B.Label then
+                        WantedInst[B.Label] = true         -- Name 名称文字
+                        AddText(SafeGet(B.Label, "Text"))
+                    end
+                    if M.IncludeTabIcon and B.Icon then
+                        WantedInst[B.Icon] = true          -- Icon 图标实例
+                    end
+                end
+            end
+        end)
     end
 
     local function Eligible(Object)
         if not M.Enabled or Seen[Object] then return false end
-        if not IsTextObject(Object) then return false end   -- 图标 / 其它一律不参与
         if NameBlocked(Object) then return false end
 
         -- 父级链同判（避免辉光 / 玻璃高光容器下的东西被误挂）
@@ -2879,11 +2924,23 @@ local YXLibTextFlow = (function(Library)
             Depth = Depth + 1
         end
 
-        -- ★ 核心：只有文本精确命中白名单才流光，其余全部保持库的主题色
+        local IsText = IsTextObject(Object)
+        local IsIcon = IsImageObject(Object)
+        if not (IsText or IsIcon) then return false end
+
+        -- ① 全局 Tooltip 浮层（ZIndex=30）：单独放行，由 Tick 按内容决定亮灭
+        if IsTooltipLabel(Object) then
+            return M.IncludeTabTooltip and true or false
+        end
+
+        -- ② 精确实例：所有标签按钮的 Name 文字 / Icon 图标（图标必须走这条路）
+        if WantedInst[Object] then return true end
+
+        -- ③ 文本白名单：内容区当前标签名 / 描述、窗口 Title / Footer、Tooltip 文案
+        if not IsText then return false end
         local Tx = SafeGet(Object, "Text")
         if type(Tx) ~= "string" or Tx == "" then return false end
-        if not Wanted[Tx] then return false end
-
+        if not WantedText[Tx] then return false end
         local Tr = SafeGet(Object, "TextTransparency")
         if Tr and Tr >= 0.99 then return false end          -- 全透明占位
         return true
@@ -2911,6 +2968,10 @@ local YXLibTextFlow = (function(Library)
         Targets[Object] = Grad
         local Tx = IsTextObject(Object) and SafeGet(Object, "Text") or nil
         FontTag[Object] = (Tx ~= nil and string.find(Tx, "<font", 1, true) ~= nil) or false
+        -- 记下 Tooltip 浮层原本的文字色，显示非标签页提示时恢复
+        if IsTooltipLabel(Object) and OrigColor[Object] == nil then
+            OrigColor[Object] = SafeGet(Object, "TextColor3")
+        end
     end
 
     -- ---------------------- 扫描范围 ----------------------
@@ -2940,7 +3001,7 @@ local YXLibTextFlow = (function(Library)
 
     local function Scan()
         if Library.Unloaded then return end
-        RebuildWanted()                 -- 标签页可能运行时新增，每次补扫重建白名单
+        RebuildTargets()                -- 标签页可能运行时新增，每次补扫重新收集
         local Roots = CollectRoots({})
         for _, Root in ipairs(Roots) do
             if not BoundRoot[Root] then
@@ -2994,18 +3055,35 @@ local YXLibTextFlow = (function(Library)
                 Targets[Object] = nil
             else
                 pcall(function()
-                    -- ① 旧模块的 SyncDynamicGradients 每帧可能把复用的渐变
+                    -- ① Tooltip 浮层是全局单例：只在显示「标签页 Tooltip」时流光，
+                    --    其它控件的提示保持主题色，并恢复原始文字色。
+                    if M.OnlyTabTooltips and IsTooltipLabel(Object) then
+                        local Tx = SafeGet(Object, "Text")
+                        if not (type(Tx) == "string" and TabTooltipText[Tx]) then
+                            Grad.Enabled = false
+                            if OrigColor[Object] ~= nil then
+                                Object.TextColor3 = OrigColor[Object]
+                            end
+                            return
+                        end
+                    end
+                    -- ② 旧模块的 SyncDynamicGradients 每帧可能把复用的渐变
                     --    Enabled 关掉 / 改 Color / 改 Rotation，这里每帧最后写回，
                     --    保证流光始终盖住它（本模块的连接在文件末尾，最后执行）。
                     Grad.Enabled = true
                     Grad.Rotation = Rot
                     Grad.Color  = Seq
                     Grad.Offset = Off
-                    -- ② 白基底：UIGradient 与文字像素相乘，白是恒等元；
+                    -- ③ 白基底：UIGradient 与像素相乘，白是恒等元；
                     --    库每帧也强制刷白，用来对抗 UpdateColorsUsingRegistry 刷回主题色。
-                    --    只有命中的这 4 组文本会走到这里，其它文字颜色完全不动。
+                    --    文本刷 TextColor3；图片图标刷 ImageColor3。
+                    --    只有命中的目标会走到这里，其它文字 / 图标颜色完全不动。
                     if M.WhiteBase and not (M.KeepRichTextColor and FontTag[Object]) then
-                        Object.TextColor3 = WHITE
+                        if IsImageObject(Object) then
+                            Object.ImageColor3 = WHITE
+                        else
+                            Object.TextColor3 = WHITE
+                        end
                     end
                 end)
             end
@@ -3044,6 +3122,11 @@ local YXLibTextFlow = (function(Library)
         end
         for K in pairs(Seen) do Seen[K] = nil end
         for K in pairs(FontTag) do FontTag[K] = nil end
+        for K in pairs(WantedInst) do WantedInst[K] = nil end
+        for Object, C in pairs(OrigColor) do
+            pcall(function() Object.TextColor3 = C end)
+            OrigColor[Object] = nil
+        end
         pcall(function() Library:UpdateColorsUsingRegistry() end)
         return self
     end
@@ -3068,14 +3151,15 @@ local YXLibTextFlow = (function(Library)
         pcall(BuildPalette)
         return self
     end
-    function M:SetTargets(T)        -- 运行时换目标文本，例如 :SetTargets{"新标题", "新页脚"}
+    function M:SetWindowTexts(T)    -- 运行时换窗口 Title / Footer
         if type(T) ~= "table" then return self end
-        M.TargetTexts = T
-        pcall(RebuildWanted)
+        M.WindowTexts = T
+        pcall(RebuildTargets)
         for K in pairs(Seen) do Seen[K] = nil end
         pcall(Scan)
         return self
     end
+    M.SetTargets = M.SetWindowTexts   -- 兼容旧调用名
 
     return M
 end)(Library)
