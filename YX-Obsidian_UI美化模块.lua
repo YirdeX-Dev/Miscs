@@ -1,3 +1,7 @@
+--[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块
+请不要当卑鄙的盗用者或者倒卖者]]
+
+
 local Library, ThemeManager, SaveManager = ...
 
 if not Library then
