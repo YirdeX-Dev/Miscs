@@ -116,10 +116,10 @@ local DefaultThemeBackground = {
     -- 字段：Background / Main / Accent / Outline / Font / Icon，均为 {R,G,B}
     Palettes = {
         { -- 背景 1：整体提亮一档的浅蓝灰（唯一保留的配色，作为启动默认）
-          -- 背景/主色/描边/强调色同步调浅，整体更明亮；字体仍近白，保持清晰对比度
+          -- 背景/主色/强调色保持明亮档；轮廓(Outline)与字体(Font)按要求改成纯白
             Background = { 32, 44, 64 }, Main = { 46, 62, 88 },
-            Accent = { 130, 200, 248 }, Outline = { 72, 100, 136 },
-            Font = { 240, 246, 255 }, Icon = { 120, 220, 250 },
+            Accent = { 130, 200, 248 }, Outline = { 255, 255, 255 },
+            Font = { 255, 255, 255 }, Icon = { 120, 220, 250 },
         },
     },
 
@@ -2384,36 +2384,41 @@ end)(Library)
 
 YXGradientBorder:Enable()
 -- ============================================================================
--- 窗口标题「流光渐变」：接管 Library:CreateWindow({ Title = "YX-Loader", ... })
---   生成的 WindowTitle 这个 TextLabel（文字本身不被修改）。
+-- 窗口标题 / 页脚「流光渐变」：接管 CreateWindow 生成的 WindowTitle 与 FooterLabel
+--   两个 TextLabel（文字本身不被修改）。
 --   · 流动：文字原地不动，一条更亮的高光带沿文字左右循环扫过
 --           （UIGradient.Offset 逐帧位移，两端同色，循环无接缝）。
 --   · 渐变：配色取自 Library.Scheme.AccentColor，复用模块顶部同一套雾蓝调和，
---           切换主题时标题渐变和边框 / 按钮 / 滑块一起变，不写死青色。
+--           切换主题时和边框 / 按钮 / 滑块一起变，不写死青色。
 --   · 关键：库把 TextColor3 登记成 "FontColor"，主题切换会把它改回字体色，
 --           会把渐变乘暗。这里改成固定白色基底，UIGradient 才能完整显色
 --           （白基底只是乘法基底，不会真的显示成白字）。
---   · 不修改库、不修改主脚本，只在美化模块里接管这一个 TextLabel。
+--   · 页脚 Footer 原本 TextTransparency=0.5 太淡，接管时压到 0 让流光清晰，
+--     Disable 时会还原成原值。
+--   · 不修改库、不修改主脚本，只在美化模块里接管这两个 TextLabel。
 -- ============================================================================
 local YXTitleFlow = (function(Library)
     local M = {}
 
     -- 可调配置 -------------------------------------------------------------
-    M.Enabled            = true
-    M.Speed              = 0.45    -- 流光速度：每秒扫过多少个标题宽度（0.45 ≈ 2.2 秒一轮）
-    M.Interval           = 1 / 30  -- 属性写入间隔（计时逐帧，写入降到约 30Hz）
-    M.ThemeCheckInterval = 0.12    -- 主题色签名检查间隔
-    M.RetryInterval      = 0.25    -- 窗口尚未创建时的重试间隔
-    M.Rotation           = 0       -- 渐变角度（0 = 水平扫过）
-    M.BaseWhite          = 0.28    -- 常态文字色向白色靠拢比例（保留主题色相）
-    M.HighWhite          = 0.88    -- 高光带向白色靠拢比例（接近白）
-    M.BandWidth          = 0.20    -- 高光带半宽（相对整条渐变）
-    M.Name               = "YXTitleFlow"
+    M.Enabled                = true
+    M.FooterEnabled          = true    -- 页脚 Footer 也加流光（与标题同一套配色 / 速度）
+    M.FooterTextTransparency = 0      -- 页脚原 0.5 太淡，接管时压到 0；Disable 会还原
+    M.Speed                  = 0.45   -- 流光速度：每秒扫过多少个文字宽度（0.45 ≈ 2.2 秒一轮）
+    M.Interval               = 1 / 30 -- 属性写入间隔（计时逐帧，写入降到约 30Hz）
+    M.ThemeCheckInterval     = 0.12   -- 主题色签名检查间隔
+    M.RetryInterval          = 0.25   -- 窗口尚未创建时的重试间隔
+    M.Rotation               = 0      -- 渐变角度（0 = 水平扫过）
+    M.BaseWhite              = 0.28   -- 常态文字色向白色靠拢比例（保留主题色相）
+    M.HighWhite              = 0.88   -- 高光带向白色靠拢比例（接近白）
+    M.BandWidth              = 0.20   -- 高光带半宽（相对整条渐变）
+    M.Name                   = "YXTitleFlow"
 
     local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
     local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
 
-    local Conn, TitleLabel, Grad = nil, nil, nil
+    local Conn = nil
+    local Targets = {}          -- { { Label, Grad, OrigTT }, ... }：标题 + 页脚共用一套动画
     local Seq, Sig, AppliedSeq = nil, nil, nil
     local Phase, LastFrame = 0, 0
     local WriteAcc, ThemeAcc, RetryAcc = 0, 0, 0
@@ -2469,7 +2474,7 @@ local YXTitleFlow = (function(Library)
         return Seq
     end
 
-    -- 定位库创建的 WindowTitle：MainFrame -> TopBar(48px) -> TitleHolder(水平 UIListLayout) -> TextLabel
+    -- 定位标题：MainFrame -> TopBar(48px) -> TitleHolder(水平 UIListLayout) -> TextLabel
     local function FindTitleLabel()
         if not (Library and Library.Window) then return nil end
         local mf = Library.Window.MainFrame
@@ -2515,6 +2520,58 @@ local YXTitleFlow = (function(Library)
         return (Ok and Found) or nil
     end
 
+    -- 定位页脚：MainFrame -> BottomBar(20px / 底部锚点 / 全透明) -> TextLabel
+    local function FindFooterLabel()
+        if not (Library and Library.Window) then return nil end
+        local mf = Library.Window.MainFrame
+        if not (mf and mf.Parent) then return nil end
+        local Ok, Found = pcall(function()
+            local BottomBar = nil
+            for _, C in ipairs(mf:GetChildren()) do
+                if C:IsA("Frame") and C.Size and C.Size.Y and C.Size.Y.Offset == 20
+                   and C.AnchorPoint and C.AnchorPoint.Y == 1
+                   and C.BackgroundTransparency == 1 then
+                    BottomBar = C; break
+                end
+            end
+            if BottomBar then
+                local Best, BestSize = nil, -1
+                for _, C in ipairs(BottomBar:GetChildren()) do
+                    if C:IsA("TextLabel") and C.Visible ~= false
+                       and type(C.Text) == "string" and #C.Text > 0 then
+                        local Sz = tonumber(C.TextSize) or 0
+                        if Sz > BestSize then Best, BestSize = C, Sz end
+                    end
+                end
+                if Best then return Best end
+            end
+            -- 回退：窗口子树里「14 号 + 半透明」的 TextLabel（库 FooterLabel 的特征）
+            local Best = nil
+            for _, C in ipairs(mf:GetDescendants()) do
+                if C:IsA("TextLabel") and C.Visible ~= false
+                   and type(C.Text) == "string" and #C.Text > 0
+                   and tonumber(C.TextSize) == 14
+                   and type(C.TextTransparency) == "number"
+                   and C.TextTransparency > 0.2 then
+                    Best = C; break
+                end
+            end
+            return Best
+        end)
+        return (Ok and Found) or nil
+    end
+
+    local function CollectLabels()
+        local Out = {}
+        local T = FindTitleLabel()
+        if T then Out[#Out + 1] = T end
+        if M.FooterEnabled then
+            local F = FindFooterLabel()
+            if F and F ~= T then Out[#Out + 1] = F end
+        end
+        return Out
+    end
+
     local function Attach(Label)
         local G = Instance.new("UIGradient")
         G.Name     = M.Name
@@ -2522,13 +2579,54 @@ local YXTitleFlow = (function(Library)
         G.Offset   = Vector2.new(0.5, 0)
         G.Color    = BuildSequence()
         G.Parent   = Label
+        local OrigTT = nil
+        pcall(function()
+            if type(Label.TextTransparency) == "number" and Label.TextTransparency > 0.01 then
+                OrigTT = Label.TextTransparency
+                Label.TextTransparency = M.FooterTextTransparency
+            end
+        end)
         -- 白基底 + 固定 Registry 登记：主题切换不再把文字色改回 FontColor
         pcall(function() Label.TextColor3 = Color3.new(1, 1, 1) end)
         pcall(function()
             local Reg = Library.Registry and Library.Registry[Label]
             if type(Reg) == "table" then Reg.TextColor3 = Color3.new(1, 1, 1) end
         end)
-        return G
+        return { Label = Label, Grad = G, OrigTT = OrigTT }
+    end
+
+    local function Release()
+        for _, Item in ipairs(Targets) do
+            pcall(function()
+                local Reg = Library.Registry and Library.Registry[Item.Label]
+                if type(Reg) == "table" then Reg.TextColor3 = "FontColor" end
+                local F = Library.Scheme and Library.Scheme.FontColor
+                if F then Item.Label.TextColor3 = F end
+                if Item.OrigTT ~= nil then
+                    Item.Label.TextTransparency = Item.OrigTT
+                end
+            end)
+            pcall(function() Item.Grad:Destroy() end)
+        end
+        Targets = {}
+    end
+
+    local function Rebuild()
+        Release()
+        for _, L in ipairs(CollectLabels()) do
+            local Ok, Item = pcall(Attach, L)
+            if Ok and Item then Targets[#Targets + 1] = Item end
+        end
+        AppliedSeq = Seq
+        return #Targets > 0
+    end
+
+    local function AllAlive()
+        if #Targets == 0 then return false end
+        for _, Item in ipairs(Targets) do
+            if not (IsAlive(Item.Label) and IsAlive(Item.Grad)) then return false end
+        end
+        return true
     end
 
     local function Tick(dt)
@@ -2543,39 +2641,41 @@ local YXTitleFlow = (function(Library)
         ThemeAcc = ThemeAcc + Step
         RetryAcc = RetryAcc + Step
 
-        -- 窗口重建 / 标题被销毁：清登记，按 RetryInterval 重新找
-        if not (IsAlive(TitleLabel) and IsAlive(Grad)) then
-            TitleLabel, Grad, Seq, Sig, AppliedSeq = nil, nil, nil, nil, nil
+        -- 窗口重建 / 任一目标被销毁：清登记，按 RetryInterval 重新找
+        if not AllAlive() then
             if RetryAcc < M.RetryInterval then return end
             RetryAcc = 0
-            local Found = FindTitleLabel()
-            if not Found then return end
-            TitleLabel = Found
-            Grad = Attach(Found)
-            AppliedSeq = Seq
+            Rebuild()
             return
         end
 
         if WriteAcc < M.Interval then return end
         WriteAcc = 0
         -- 白基底守卫（库若在别处改回字体色，这里拉回）
-        pcall(function()
-            local C = TitleLabel.TextColor3
-            if not (C and C.R and C.R > 0.999 and C.G > 0.999 and C.B > 0.999) then
-                TitleLabel.TextColor3 = Color3.new(1, 1, 1)
-            end
-        end)
-        -- 主题签名变化才重建色序列，平时零写入
+        for _, Item in ipairs(Targets) do
+            local L = Item.Label
+            pcall(function()
+                local C = L.TextColor3
+                if not (C and C.R and C.R > 0.999 and C.G > 0.999 and C.B > 0.999) then
+                    L.TextColor3 = Color3.new(1, 1, 1)
+                end
+            end)
+        end
+        -- 主题签名变化才重建色序列，平时零写入；两个文字一起更新
         if ThemeAcc >= M.ThemeCheckInterval then
             ThemeAcc = 0
             local S = BuildSequence()
             if S ~= AppliedSeq then
                 AppliedSeq = S
-                pcall(function() Grad.Color = S end)
+                for _, Item in ipairs(Targets) do
+                    pcall(function() Item.Grad.Color = S end)
+                end
             end
         end
         -- 流光位移：Offset.X 在 +0.5 ~ -0.5 间循环，亮带沿文字横向反复扫过
-        pcall(function() Grad.Offset = Vector2.new(0.5 - Phase, 0) end)
+        for _, Item in ipairs(Targets) do
+            pcall(function() Item.Grad.Offset = Vector2.new(0.5 - Phase, 0) end)
+        end
     end
 
     function M:Enable()
@@ -2587,34 +2687,26 @@ local YXTitleFlow = (function(Library)
         end)
         if Ok then Conn = C end
         -- 立即接管一次，启动即生效；窗口尚未创建时交给心跳重试
-        local Found = FindTitleLabel()
-        if Found then
-            TitleLabel = Found
-            Grad = Attach(Found)
-            AppliedSeq = Seq
-        end
+        Rebuild()
         return self
     end
 
     function M:Disable()
         M.Enabled = false
         if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
-        if TitleLabel then
-            pcall(function()
-                local Reg = Library.Registry and Library.Registry[TitleLabel]
-                if type(Reg) == "table" then Reg.TextColor3 = "FontColor" end
-                local F = Library.Scheme and Library.Scheme.FontColor
-                if F then TitleLabel.TextColor3 = F end
-            end)
-        end
-        if Grad then pcall(function() Grad:Destroy() end) end
-        Conn, TitleLabel, Grad = nil, nil, nil
+        Release()
         Seq, Sig, AppliedSeq = nil, nil, nil
         return self
     end
 
     function M:SetSpeed(V)
         if type(V) == "number" then M.Speed = V end
+        return self
+    end
+
+    function M:SetFooterEnabled(V)
+        M.FooterEnabled = V and true or false
+        if M.Enabled then Rebuild() end
         return self
     end
 
