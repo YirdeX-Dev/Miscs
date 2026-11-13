@@ -2382,546 +2382,7 @@ local YXGradientBorder = (function(Library)
 end)(Library)
 
 YXGradientBorder:Enable()
--- ============================================================================
--- 窗口标题 / 页脚「逐词流光渐变」：接管 CreateWindow 生成的 WindowTitle 与
---   FooterLabel 这两个 TextLabel（文字本身不被修改）。
---   · 逐词渐变：原来一整条 UIGradient 横跨整串文字，靠后的词只能分到渐变的一小段，
---     看起来发暗。现在把文字按词拆开，每个词一个 TextLabel、各自挂一条 UIGradient，
---     于是每个词内部都能完整走一遍渐变（YX-SCRPIT => "YX-" 一条、"SCRPIT" 一条）。
---   · 流动：所有词共用同一个相位，UIGradient.Offset 同步位移，高光带沿文字横向
---     循环扫过；M.WordPhaseStep 可让词与词错开相位，形成波浪。
---   · 实现方式：在原来那个 TextLabel 内部挂一个尺寸 1:1 的透明子 Frame，把原文
---     字设成全透明，子 Frame 里用 UIListLayout 横向排布每个词。
---     原 Label 不移位、不缩放、不销毁 —— 库的 Window:ChangeTitle / Window:SetFooter
---     以及侧边栏收缩时对 Visible 的切换全部照常生效（子 Frame 是它的子物体，
---     Label 隐身时跟着隐身），窗口布局一点不受影响。
---   · 颜色：取自 Library.Scheme.AccentColor，复用模块顶部同一套雾蓝调和，切换主题
---     时和边框 / 按钮 / 滑块一起变，不写死青色。
---   · 回退：文字里含富文本标记、开了 TextScaled、或拆不出 2 个词以上时，自动退回
---     「整串一条渐变」的老实现，不会出错。
--- ============================================================================
-local YXTitleFlow = (function(Library)
-    local M = {}
 
-    -- 可调配置 -------------------------------------------------------------
-    M.Enabled                = true
-    M.WordSplit              = true            -- true=每个词各自一条渐变；false=整串一条（旧行为）
-    M.WordSeparators         = { " ", "-" }    -- 分词符（分隔符留在前一个词末尾，不丢字符）
-    M.WordPhaseStep          = 0               -- 词与词的相位错开量（0=完全同步，0.12≈波浪）
-    M.FooterEnabled          = true            -- 页脚 Footer 也逐词渐变
-    M.FooterTextTransparency = 0               -- 仅回退路径使用（整串渐变时页脚原 0.5 太淡）
-    M.Speed                  = 0.45            -- 流光速度：每秒扫过多少个文字宽度
-    M.Interval               = 1 / 30          -- 属性写入间隔（计时逐帧，写入约 30Hz）
-    M.ThemeCheckInterval     = 0.12            -- 主题色签名检查间隔
-    M.RetryInterval          = 0.25            -- 窗口尚未创建 / 文字刚变过时的重建间隔
-    M.Rotation               = 0               -- 渐变角度（0 = 水平扫过）
-    M.BaseWhite              = 0.28            -- 常态文字色向白色靠拢比例（保留主题色相）
-    M.HighWhite              = 0.88            -- 高光带向白色靠拢比例（接近白）
-    M.BandWidth              = 0.20            -- 高光带半宽（相对单条渐变）
-    M.Name                   = "YXTitleFlow"
-
-    -- 结尾的普通空格在部分字体下会被裁掉，换成不换行空格保证词间距不丢
-    local NBSP = "\xC2\xA0"
-
-    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
-    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
-
-    local Conn = nil
-    local BoundMF = nil         -- 当前接管的窗口 MainFrame（窗口被重建时换新）
-    local Targets = {}          -- 每个接管对象：{ Label, Row, Words, Grad, OrigTT, OrigText }
-    local Seq, Sig, AppliedSeq = nil, nil, nil
-    local Phase, LastFrame = 0, 0
-    local WriteAcc, ThemeAcc, RetryAcc = 0, 0, 0
-
-    local function Clamp(V, Lo, Hi)
-        if V < Lo then return Lo end
-        if V > Hi then return Hi end
-        return V
-    end
-
-    -- 只靠 Parent 判断存活，不用 IsDescendantOf(game)（真机 UI 不在 game 下会被误杀）
-    local function IsAlive(O)
-        if not O then return false end
-        local Ok, P = pcall(function() return O.Parent end)
-        return Ok and P ~= nil
-    end
-
-    local function GetMainFrame()
-        if not (Library and Library.Window) then return nil end
-        local mf = Library.Window.MainFrame
-        if mf and mf.Parent then return mf end
-        return nil
-    end
-
-    -- 取当前主题强调色（与边框 / 控件同一套雾蓝调和函数）
-    local function AccentColor()
-        local Ok, C = pcall(function()
-            local RGB = YXThemeAccentRGB(Library, true)
-            return Color3.new(RGB[1], RGB[2], RGB[3])
-        end)
-        if Ok and C then return C end
-        local F = Library and Library.Scheme and Library.Scheme.AccentColor
-        return F or Color3.fromRGB(130, 200, 248)
-    end
-
-    local function MixWhite(C, T)
-        return Color3.new(C.R + (1 - C.R) * T,
-                          C.G + (1 - C.G) * T,
-                          C.B + (1 - C.B) * T)
-    end
-
-    -- 常态色 = 主题色提亮；高光色 = 更接近白。0 与 1 端点同色，扫过循环无接缝。
-    local function BuildSequence()
-        local Base = AccentColor()
-        local NewSig = string.format("%.4f,%.4f,%.4f", Base.R, Base.G, Base.B)
-        if Seq and NewSig == Sig then return Seq end
-        Sig = NewSig
-        local Edge = MixWhite(Base, Clamp(M.BaseWhite, 0, 1))
-        local Hi   = MixWhite(Base, Clamp(M.HighWhite, 0, 1))
-        local W    = Clamp(M.BandWidth, 0.05, 0.45)
-        local L    = 0.5 - W
-        local R    = 0.5 + W
-        Seq = ColorSequence.new({
-            ColorSequenceKeypoint.new(0.00, Edge),
-            ColorSequenceKeypoint.new(L,    Edge),
-            ColorSequenceKeypoint.new(0.50, Hi),
-            ColorSequenceKeypoint.new(R,    Edge),
-            ColorSequenceKeypoint.new(1.00, Edge),
-        })
-        return Seq
-    end
-
-    -- 按分隔符切词：分隔符留在前一个词末尾，不丢字符
-    --   "YX-SCRPIT"            -> { "YX-", "SCRPIT" }
-    --   "YX-Loader | YirdeX开发" -> { "YX-", "Loader ", "| ", "YirdeX开发" }
-    local function Tokenize(Text)
-        local Sep = {}
-        for _, C in ipairs(M.WordSeparators or {}) do Sep[C] = true end
-        local Out, Buf = {}, {}
-        local Ok = pcall(function()
-            for _, Code in utf8.codes(Text) do
-                local Ch = utf8.char(Code)
-                Buf[#Buf + 1] = Ch
-                if Sep[Ch] then
-                    Out[#Out + 1] = table.concat(Buf)
-                    Buf = {}
-                end
-            end
-        end)
-        if not Ok then return {} end
-        if #Buf > 0 then Out[#Out + 1] = table.concat(Buf) end
-        local Clean = {}
-        for _, T in ipairs(Out) do
-            if T ~= "" then Clean[#Clean + 1] = T end
-        end
-        return Clean
-    end
-
-    local function KeepTrailingSpaces(S)
-        local Ok, Out = pcall(function()
-            return (S:gsub("( +)$", function(M2) return string.rep(NBSP, #M2) end))
-        end)
-        return (Ok and Out) or S
-    end
-
-    -- 定位标题：MainFrame -> TopBar(48px) -> TitleHolder(水平 UIListLayout) -> TextLabel
-    local function FindTitleLabel()
-        if not (Library and Library.Window) then return nil end
-        local mf = Library.Window.MainFrame
-        if not (mf and mf.Parent) then return nil end
-        local Ok, Found = pcall(function()
-            local TopBar = nil
-            for _, C in ipairs(mf:GetChildren()) do
-                if C:IsA("Frame") and C.Size and C.Size.X and C.Size.Y
-                   and C.Size.Y.Offset == 48 and C.Size.X.Scale == 1 then
-                    TopBar = C; break
-                end
-            end
-            if not TopBar then return nil end
-            local function BestIn(Node)
-                local Best, BestSize = nil, -1
-                for _, C in ipairs(Node:GetChildren()) do
-                    if C:IsA("TextLabel") and C.Visible ~= false
-                       and type(C.Text) == "string" and #C.Text > 1 then
-                        local Sz = tonumber(C.TextSize) or 0
-                        if Sz > BestSize then Best, BestSize = C, Sz end
-                    end
-                end
-                return Best
-            end
-            for _, C in ipairs(TopBar:GetChildren()) do
-                if C:IsA("Frame") and C.FindFirstChildOfClass
-                   and C:FindFirstChildOfClass("UIListLayout") then
-                    local B = BestIn(C)
-                    if B then return B end
-                end
-            end
-            local Best, BestSize = nil, -1
-            for _, C in ipairs(TopBar:GetDescendants()) do
-                if C:IsA("TextLabel") and C.Visible ~= false
-                   and type(C.Text) == "string" and #C.Text > 1 then
-                    local Sz = tonumber(C.TextSize) or 0
-                    if Sz > BestSize then Best, BestSize = C, Sz end
-                end
-            end
-            return Best
-        end)
-        return (Ok and Found) or nil
-    end
-
-    -- 定位页脚：MainFrame -> BottomBar(20px / 底部锚点 / 全透明) -> TextLabel
-    local function FindFooterLabel()
-        if not (Library and Library.Window) then return nil end
-        local mf = Library.Window.MainFrame
-        if not (mf and mf.Parent) then return nil end
-        local Ok, Found = pcall(function()
-            local BottomBar = nil
-            for _, C in ipairs(mf:GetChildren()) do
-                if C:IsA("Frame") and C.Size and C.Size.Y and C.Size.Y.Offset == 20
-                   and C.AnchorPoint and C.AnchorPoint.Y == 1
-                   and C.BackgroundTransparency == 1 then
-                    BottomBar = C; break
-                end
-            end
-            if BottomBar then
-                local Best, BestSize = nil, -1
-                for _, C in ipairs(BottomBar:GetChildren()) do
-                    if C:IsA("TextLabel") and C.Visible ~= false
-                       and type(C.Text) == "string" and #C.Text > 0 then
-                        local Sz = tonumber(C.TextSize) or 0
-                        if Sz > BestSize then Best, BestSize = C, Sz end
-                    end
-                end
-                if Best then return Best end
-            end
-            local Best = nil
-            for _, C in ipairs(mf:GetDescendants()) do
-                if C:IsA("TextLabel") and C.Visible ~= false
-                   and type(C.Text) == "string" and #C.Text > 0
-                   and tonumber(C.TextSize) == 14
-                   and type(C.TextTransparency) == "number"
-                   and C.TextTransparency > 0.2 then
-                    Best = C; break
-                end
-            end
-            return Best
-        end)
-        return (Ok and Found) or nil
-    end
-
-    local function CollectLabels()
-        local Out = {}
-        local T = FindTitleLabel()
-        if T then Out[#Out + 1] = T end
-        if M.FooterEnabled then
-            local F = FindFooterLabel()
-            if F and F ~= T then Out[#Out + 1] = F end
-        end
-        return Out
-    end
-
-    -- 回退路径：整串一条渐变（老实现）
-    local function AttachSingle(Label)
-        local OrigTT = nil
-        pcall(function()
-            if type(Label.TextTransparency) == "number" then
-                OrigTT = Label.TextTransparency
-                if OrigTT > 0.01 then Label.TextTransparency = M.FooterTextTransparency end
-            end
-        end)
-        local G = Instance.new("UIGradient")
-        G.Name     = M.Name
-        G.Rotation = M.Rotation
-        G.Offset   = Vector2.new(0.5, 0)
-        G.Color    = BuildSequence()
-        G.Parent   = Label
-        -- 白基底 + 固定 Registry 登记：主题切换不再把文字色改回 FontColor
-        pcall(function() Label.TextColor3 = Color3.new(1, 1, 1) end)
-        pcall(function()
-            local Reg = Library.Registry and Library.Registry[Label]
-            if type(Reg) == "table" then Reg.TextColor3 = Color3.new(1, 1, 1) end
-        end)
-        return { Label = Label, Grad = G, Words = nil, OrigTT = OrigTT, OrigText = Label.Text }
-    end
-
-    -- 逐词路径：原 Label 内挂 1:1 透明子 Frame，里面每个词一个 TextLabel + 各自渐变
-    local function AttachWords(Label, Tokens)
-        local OrigTT = nil
-        pcall(function()
-            if type(Label.TextTransparency) == "number" then
-                OrigTT = Label.TextTransparency
-            end
-        end)
-
-        local Row = Instance.new("Frame")
-        Row.Name = M.Name .. "_Row"
-        Row.BackgroundTransparency = 1
-        Row.BorderSizePixel = 0
-        Row.Position = UDim2.fromOffset(0, 0)
-        Row.Size = UDim2.fromScale(1, 1)
-        Row.ClipsDescendants = false
-        Row.ZIndex = Label.ZIndex
-
-        local List = Instance.new("UIListLayout")
-        List.Name = M.Name .. "_List"
-        List.FillDirection = Enum.FillDirection.Horizontal
-        List.SortOrder = Enum.SortOrder.LayoutOrder
-        List.Padding = UDim.new(0, 0)
-        List.VerticalAlignment = Enum.VerticalAlignment.Center
-        -- 跟随原 Label 的横向对齐（库没设，默认 Center）
-        local XAlign = nil
-        pcall(function() XAlign = Label.TextXAlignment end)
-        local HAlign = Enum.HorizontalAlignment.Center
-        if XAlign == Enum.TextXAlignment.Left then
-            HAlign = Enum.HorizontalAlignment.Left
-        elseif XAlign == Enum.TextXAlignment.Right then
-            HAlign = Enum.HorizontalAlignment.Right
-        end
-        List.HorizontalAlignment = HAlign
-        List.Parent = Row
-
-        local Words = {}
-        for I, T in ipairs(Tokens) do
-            local W = Instance.new("TextLabel")
-            W.Name = string.format("%s_W%d", M.Name, I)
-            W.BackgroundTransparency = 1
-            W.BorderSizePixel = 0
-            W.Text = KeepTrailingSpaces(T)
-            W.TextSize = Label.TextSize
-            W.TextColor3 = Color3.new(1, 1, 1)
-            W.TextXAlignment = Enum.TextXAlignment.Left
-            W.TextYAlignment = Enum.TextYAlignment.Center
-            W.RichText = false
-            W.LayoutOrder = I
-            W.AutomaticSize = Enum.AutomaticSize.X
-            W.Size = UDim2.new(0, 0, 1, 0)
-            W.ZIndex = Label.ZIndex
-            -- 字体族 / 字重跟着原 Label，避免宽度和字形走样
-            pcall(function() W.Font = Label.Font end)
-            pcall(function() if Label.FontFace ~= nil then W.FontFace = Label.FontFace end end)
-            W.Parent = Row
-
-            local G = Instance.new("UIGradient")
-            G.Name     = M.Name
-            G.Rotation = M.Rotation
-            G.Offset   = Vector2.new(0.5, 0)
-            G.Color    = BuildSequence()
-            G.Parent   = W
-
-            Words[#Words + 1] = { Label = W, Grad = G }
-        end
-
-        Row.Parent = Label
-        -- 原文字全透明，只留我们的逐词副本显示（文字内容本身保留，库随时能读）
-        pcall(function() Label.TextTransparency = 1 end)
-
-        return { Label = Label, Row = Row, Words = Words, Grad = nil,
-                 OrigTT = OrigTT, OrigText = Label.Text }
-    end
-
-    local function Attach(Label)
-        local Text = nil
-        pcall(function() Text = Label.Text end)
-        local CanSplit = M.WordSplit
-            and type(Text) == "string" and #Text > 0 and not Text:find("<", 1, true)
-        local Scaled = false
-        pcall(function() Scaled = Label.TextScaled == true end)
-        if CanSplit and not Scaled then
-            local Tokens = Tokenize(Text)
-            if #Tokens >= 2 then
-                local Ok, Item = pcall(AttachWords, Label, Tokens)
-                if Ok and Item then return Item end
-            end
-        end
-        return AttachSingle(Label)
-    end
-
-    local function ReleaseItem(Item)
-        pcall(function()
-            if Item.Row then
-                Item.Row:Destroy()          -- 连同每个词的 TextLabel / UIGradient
-            end
-            if Item.Grad then
-                Item.Grad:Destroy()
-            end
-            if type(Item.OrigTT) == "number" then
-                Item.Label.TextTransparency = Item.OrigTT
-            end
-            if not Item.Words then
-                local Reg = Library.Registry and Library.Registry[Item.Label]
-                if type(Reg) == "table" then Reg.TextColor3 = "FontColor" end
-                local F = Library.Scheme and Library.Scheme.FontColor
-                if F then Item.Label.TextColor3 = F end
-            end
-        end)
-    end
-
-    local function Release()
-        for _, Item in ipairs(Targets) do
-            ReleaseItem(Item)
-        end
-        Targets = {}
-    end
-
-    local function Rebuild()
-        Release()
-        BoundMF = GetMainFrame()
-        for _, L in ipairs(CollectLabels()) do
-            local Ok, Item = pcall(Attach, L)
-            if Ok and Item then Targets[#Targets + 1] = Item end
-        end
-        AppliedSeq = Seq
-        return #Targets > 0
-    end
-
-    local function AllAlive()
-        if #Targets == 0 then return false end
-        for _, Item in ipairs(Targets) do
-            if not IsAlive(Item.Label) then return false end
-            if Item.Row then
-                if not IsAlive(Item.Row) then return false end
-                for _, W in ipairs(Item.Words) do
-                    if not (IsAlive(W.Label) and IsAlive(W.Grad)) then return false end
-                end
-            elseif not IsAlive(Item.Grad) then
-                return false
-            end
-        end
-        return true
-    end
-
-    -- 文字被 ChangeTitle / SetFooter 改过：需要按新词重拆
-    local function TextChanged()
-        for _, Item in ipairs(Targets) do
-            local Ok, T = pcall(function() return Item.Label.Text end)
-            if not Ok or T ~= Item.OrigText then return true end
-        end
-        return false
-    end
-
-    local function Tick(dt)
-        if not M.Enabled then return end
-        local Now  = os.clock()
-        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - LastFrame)
-        if Step < 0 then Step = 0 end
-        if Step > 0.1 then Step = 0.1 end   -- 卡顿后不跳一大截
-        LastFrame = Now
-        Phase    = (Phase + Step * M.Speed) % 1
-        WriteAcc = WriteAcc + Step
-        ThemeAcc = ThemeAcc + Step
-        RetryAcc = RetryAcc + Step
-
-        -- 窗口被重建（MainFrame 换新）：立刻重新接管，不等旧的自己死掉
-        local mf = GetMainFrame()
-        if mf ~= BoundMF then
-            RetryAcc = 0
-            Rebuild()
-            return
-        end
-
-        -- 窗口重建 / 文字被改 / 目标被销毁：按 RetryInterval 重新接管
-        if (not AllAlive()) or TextChanged() then
-            if RetryAcc < M.RetryInterval then return end
-            RetryAcc = 0
-            Rebuild()
-            return
-        end
-
-        if WriteAcc < M.Interval then return end
-        WriteAcc = 0
-
-        -- 白基底守卫（回退路径生效；逐词路径文字本来是全透明）
-        for _, Item in ipairs(Targets) do
-            if Item.Words then
-                pcall(function()
-                    if Item.Label.TextTransparency < 0.999 then
-                        Item.Label.TextTransparency = 1
-                    end
-                end)
-            else
-                local L = Item.Label
-                pcall(function()
-                    local C = L.TextColor3
-                    if not (C and C.R and C.R > 0.999 and C.G > 0.999 and C.B > 0.999) then
-                        L.TextColor3 = Color3.new(1, 1, 1)
-                    end
-                end)
-            end
-        end
-
-        -- 主题签名变化才重建色序列，平时零写入
-        if ThemeAcc >= M.ThemeCheckInterval then
-            ThemeAcc = 0
-            local S = BuildSequence()
-            if S ~= AppliedSeq then
-                AppliedSeq = S
-                for _, Item in ipairs(Targets) do
-                    if Item.Words then
-                        for _, W in ipairs(Item.Words) do
-                            pcall(function() W.Grad.Color = S end)
-                        end
-                    elseif Item.Grad then
-                        pcall(function() Item.Grad.Color = S end)
-                    end
-                end
-            end
-        end
-
-        -- 流光位移：每个词各自位移，相位可由 WordPhaseStep 错开
-        for _, Item in ipairs(Targets) do
-            if Item.Words then
-                for I, W in ipairs(Item.Words) do
-                    local Off = 0.5 - Phase + (I - 1) * (M.WordPhaseStep or 0)
-                    pcall(function() W.Grad.Offset = Vector2.new(Off, 0) end)
-                end
-            elseif Item.Grad then
-                pcall(function() Item.Grad.Offset = Vector2.new(0.5 - Phase, 0) end)
-            end
-        end
-    end
-
-    function M:Enable()
-        M.Enabled = true
-        if not Heartbeat or Conn then return self end
-        LastFrame = os.clock()
-        local Ok, C = pcall(function()
-            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
-        end)
-        if Ok then Conn = C end
-        -- 立即接管一次，启动即生效；窗口尚未创建时交给心跳重试
-        Rebuild()
-        return self
-    end
-
-    function M:Disable()
-        M.Enabled = false
-        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
-        Release()
-        Seq, Sig, AppliedSeq = nil, nil, nil
-        return self
-    end
-
-    function M:SetSpeed(V)
-        if type(V) == "number" then M.Speed = V end
-        return self
-    end
-
-    function M:SetWordSplit(V)
-        M.WordSplit = V and true or false
-        if M.Enabled then Rebuild() end
-        return self
-    end
-
-    function M:SetFooterEnabled(V)
-        M.FooterEnabled = V and true or false
-        if M.Enabled then Rebuild() end
-        return self
-    end
-
-    return M
-end)(Library)
-
-YXTitleFlow:Enable()
 -- ============================================================================
 -- 液态玻璃（移植自 SyndromeXph/Obsidian 新版库 Library.lua 的 "Liquid Glass"）
 --   库内位置：294-301 行配置 / 1593-1644 行 ApplyLiquidGlass + AddGlassSheen /
@@ -3202,651 +2663,329 @@ local YXLiquidGlass = (function(Library)
 end)(Library)
 
 YXLiquidGlass:Enable()
+
+
 -- ============================================================================
--- ① 全界面「真·流动」流光：普通文字 + 图标 + 填充渐变
---
--- 上一版为什么「不流动 / 只有两边颜色中间白」：
---   它靠【每帧重建 ColorSequence】(Grad.Color = ...) 来挪亮带。真机上
---   ColorSequence 每帧重建后赋值刷新并不可靠，且 Peaks=3 时相位推进极小
---   (一个亮峰走完整条色带要约 7 秒)，看起来就是一条静态的
---   「彩色底 - 白 - 彩色底」渐变。而本模块里标题/页脚的 YXTitleFlow 用的是
---   UIGradient.Offset 平移，一直在动 —— 证明 Offset 在真机上可靠。
---
--- 这一版：
---   · 色带【只创建一次】，做成 Peaks 个等间距的「彩色底 -> 纯白亮峰 -> 彩色底」
---     周期，两端同色；每帧只写 Grad.Offset 一个数值属性（真机必刷新、开销最小）。
---   · Offset 单向平移，循环长度 = 一个图案周期 1/Peaks，图案首尾一致 => 无缝。
---     超出 [0,1] 被 clamp 的那一段是彩色底，不会出现「整片死色」；
---     因为色带有多个亮峰，可见区始终有亮带在连续流动。
---   · 接管范围扩大到【所有文本 + 图标】：TextLabel / TextButton 之外，
---     固定小尺寸的 ImageLabel / ImageButton 也挂流光（背景图/辉光/玻璃高光
---     按 名称 + Scale 尺寸 + 透明度 过滤掉）。
---   · 开发者名单（含 [ + <font color="rgb(...)">）不在这里接管，交给 ②。
---   · 控件填充渐变（按钮/下拉/菜单/滑块）仍用 Offset 正弦往返；
---     边框 / 玻璃高光 / 标题逐词渐变各有自己的动画，白名单之外一律不碰。
---   · 不拆 RichText、不改 TextColor3、不动 Registry、不改布局。
+-- 全体文字 / 图标 渐变流光   ——   原理 1:1 移植自新版库 Library.lua
 -- ============================================================================
-local YXAllFlow = (function(Library)
+local YXLibTextFlow = (function(Library)
     local M = {}
 
-    -- 可调配置 -------------------------------------------------------------
-    M.Enabled             = true
-    M.TextEnabled         = true    -- 所有普通文字流动
-    M.IconEnabled         = true    -- 图标也流动
-    M.GradientEnabled     = true    -- 填充渐变一起缓慢流动
-    M.Speed               = 0.45    -- Offset 每秒平移量（相对整条色带）
-    M.Peaks               = 4       -- 色带内亮峰个数，图案周期 = 1/Peaks
-    M.BandWidth           = 0.10    -- 亮峰半宽（相对整条色带）
-    M.Interval            = 1 / 30  -- 写 Offset 频率（数值属性很轻，可到 30Hz）
-    M.ScanInterval        = 0.5     -- 新控件 / 动态标签 / 动态图标补扫间隔
-    M.ThemeCheckInterval  = 0.15    -- 主题色签名检查间隔
-    M.PlainSaturation     = 0.62    -- 文字彩底饱和度（0 = 灰度）
-    M.IconEdgeWhite       = 0.45    -- 图标彩底向白靠拢，避免图标被染太重
-    M.GradientSpeed       = 0.22    -- 控件渐变往返速度
-    M.GradientAmplitude   = 0.45    -- 控件渐变 Offset 摆动幅度
-    M.MaxOwned            = 800     -- 新建渐变数量上限
-    M.IconMaxSize         = 64      -- 只接管固定尺寸 <= 64px 的图标（更大 = 背景图）
-    M.SkipTextBox         = true
-    M.SkipNames           = {
-        YXTitleFlow   = true,       -- 标题 / 页脚逐词渐变自己在动
-        YXAllFlowText = true,
-        YXAllFlowIcon = true,
-        YXFlowText    = true,       -- 兼容旧独立片段
-    }
-    M.GradientNames       = {
-        YXButtonGradient      = true,
-        YXDropdownGradient    = true,
-        YXMenuGradient        = true,
-        YXSliderTrackGradient = true,
-    }
-    M.IconSkipNames       = {
-        "glow", "sheen", "background", "shadow", "blur",
-        "mask", "cursor", "wallpaper", "vignette",
-    }
-    M.TextGradName        = "YXAllFlowText"
-    M.IconGradName        = "YXAllFlowIcon"
+    -- ---------------------- 可调配置 ----------------------
+    M.Enabled            = true
+    M.Speed              = 0.28      -- 颜色循环速度（库：标题 0.25 / 页脚 0.28）
+    M.OffsetSpeed        = 0.28      -- 色带横向平移速度（库页脚 0.28）
+    M.Sway               = 0         -- Rotation 摆动幅度（库页脚 16；0=不摆，全屏文字更稳）
+    M.Interval           = 1 / 30    -- 刷新间隔，30fps 已足够顺滑；设 0 = 每帧
+    M.ScanInterval       = 0.5       -- 动态补扫间隔（下拉 / 通知 / 对话框运行时创建）
+    M.ThemeInterval      = 0.3       -- 主题强调色重取间隔
+
+    M.IncludeIcons       = true      -- 图标一起流动（用户上一轮明确要求"包括图标"）
+    M.IncludeTextBox     = true      -- 输入框文字也一起流动
+    M.IconMaxSize        = 64        -- 超过此边长的图片视为背景图 / 大图，跳过
+    M.TakeOverExisting   = true      -- 复用对象上已有的那条 UIGradient（旧模块的
+                                     -- YXThemeGradient / YXButtonGradient / YXAccentGradient
+                                     -- 也一起接管）。一个 GuiObject 挂两条 UIGradient 时
+                                     -- 引擎只认一条、互相打架，正是之前"不流动"的元凶之一；
+                                     -- 复用同一条 + 每帧最后写入，才能真正确保流光生效。
+    M.UseLibraryPalette  = false     -- true=库原版紫黑(148,0,211)/(186,85,255)/(0,0,0)
+    M.WhiteBase          = true      -- 每帧强制白字基底（库同款；渐变与文字相乘，白=恒等）
+    M.KeepRichTextColor  = true      -- 含 <font color=...> 的文字保留内联色，只让渐变相乘
+    M.IconWhiteBase      = true      -- 图标也铺白基底（库同款），否则渐变与图标原色相乘会发暗/偏色
+
+    -- ---------------------- 内部状态 ----------------------
+    local FALLBACK_ACCENT = Color3.fromRGB(130, 200, 248)
 
     local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
     local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
 
-    local White = Color3.new(1, 1, 1)
+    local Targets   = setmetatable({}, { __mode = "k" })   -- [GuiObject] = UIGradient
+    local Seen      = setmetatable({}, { __mode = "k" })   -- 已判定过的对象
+    local FontTag   = setmetatable({}, { __mode = "k" })   -- 含 <font color> 的对象
+    local BoundRoot = setmetatable({}, { __mode = "k" })   -- 已挂 DescendantAdded 的根
 
-    local function Clamp(V, Lo, Hi)
-        if V < Lo then return Lo end
-        if V > Hi then return Hi end
-        return V
-    end
-    local function KP(T, C) return ColorSequenceKeypoint.new(T, C) end
-    local function PeakCount()
-        return math.max(1, math.min(6, math.floor(tonumber(M.Peaks) or 4)))
-    end
+    local Acc, ScanAcc, ThemeAcc = 0, 0, 0
+    local Conn, Started, FirstFrame = nil, false, true
 
-    -- 主题强调色 -> 饱和化彩色底（保留色相，拉大与纯白亮峰的差）
-    local function PlainEdge()
-        local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
-        local C = (Ok and RGB) or { 130 / 255, 200 / 255, 248 / 255 }
-        local S = Clamp(M.PlainSaturation, 0, 1)
-        local L = 0.2126 * C[1] + 0.7152 * C[2] + 0.0722 * C[3]
-        if S <= 0 then return Color3.new(L, L, L) end
-        local K = 1 + S * 1.6
-        local function Ch(V) return Clamp(L + (V - L) * K, 0.04, 1) end
-        return Color3.new(Ch(C[1]), Ch(C[2]), Ch(C[3]))
+    local function SafeGet(Object, Key)
+        local Ok, Value = pcall(function() return Object[Key] end)
+        if Ok then return Value end
+        return nil
     end
 
-    local function MixWhite(C, T)
-        return Color3.new(C.R + (1 - C.R) * T,
-                          C.G + (1 - C.G) * T,
-                          C.B + (1 - C.B) * T)
+    local function IsTextObject(Object)
+        return Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox")
     end
 
-    local function ThemeSignature()
-        local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
-        local C = (Ok and RGB) or { 130 / 255, 200 / 255, 248 / 255 }
-        return string.format("%.4f,%.4f,%.4f,%.3f,%.3f",
-            C[1], C[2], C[3], M.PlainSaturation, M.IconEdgeWhite)
+    local function IsIconObject(Object)
+        if not M.IncludeIcons then return false end
+        return Object:IsA("ImageLabel") or Object:IsA("ImageButton")
     end
 
-    -- 周期色带：Peaks 个「Edge -> White -> Edge」，两端同色，关键点严格递增。
-    -- 图案周期 = 1/Peaks；Offset 平移一个周期后图案与起点完全一致 => 无缝循环。
-    local function BuildPeriodSeq(Edge)
-        local P = PeakCount()
-        local W = Clamp(M.BandWidth or 0.10, 0.02, 0.30) / P
-        local Kps = { KP(0, Edge) }
-        for k = 0, P - 1 do
-            local c = (k + 0.5) / P
-            local a, b = c - W, c + W
-            if a > 0.001 then Kps[#Kps + 1] = KP(a, Edge) end
-            Kps[#Kps + 1] = KP(c, White)
-            if b < 0.999 then Kps[#Kps + 1] = KP(b, Edge) end
+    -- 辉光 / 玻璃高光 / 背景 / 模糊 / 遮罩 等装饰层不参与（辉光不是背景图）
+    local SKIP_NAME = {
+        "YXLiquidGlassSheen", "YXLibFlowGradient", "YXGlow", "WindowGlow",
+        "Glow", "Sheen", "Shadow", "Blur", "Acrylic", "Backdrop", "Mask",
+    }
+    local function NameBlocked(Object)
+        local Name = Object.Name or ""
+        for _, Key in ipairs(SKIP_NAME) do
+            if string.find(Name, Key, 1, true) then return true end
         end
-        Kps[#Kps + 1] = KP(1, Edge)
-        return ColorSequence.new(Kps)
+        return false
     end
 
-    local SeqText, SeqIcon, SeqSig = nil, nil, nil
-    local Items  = setmetatable({}, { __mode = "k" })  -- [UIGradient] = {OX,OY,Kind}
-    local Seen   = setmetatable({}, { __mode = "k" })
-    local Owned  = setmetatable({}, { __mode = "k" })
-    local OwnedCount = 0
+    -- ---------------------- 配色（照抄库的 4 关键点 sin + Lerp 结构） ----------------------
+    local Pal = {}
 
-    -- 色带只在「启用 / 切主题 / 改配置」时重建，不是每帧
-    local function RefreshSequences(Force)
-        local Sig = ThemeSignature()
-        if not Force and Sig == SeqSig then return false end
-        SeqSig = Sig
-        local E = PlainEdge()
-        SeqText = BuildPeriodSeq(E)
-        SeqIcon = BuildPeriodSeq(MixWhite(E, Clamp(M.IconEdgeWhite, 0, 1)))
-        for Grad, Info in pairs(Items) do
-            if Info.Kind == "text" then
-                pcall(function() Grad.Color = SeqText end)
-            elseif Info.Kind == "icon" then
-                pcall(function() Grad.Color = SeqIcon end)
-            end
+    local function ReadAccent()
+        local Ok, C = pcall(function()
+            return Library.Scheme and Library.Scheme.AccentColor
+        end)
+        if Ok and typeof(C) == "Color3" then return C end
+        return FALLBACK_ACCENT
+    end
+
+    local function BuildPalette()
+        if M.UseLibraryPalette then
+            Pal.Dark = Color3.fromRGB(0, 0, 0)         -- 库 PureBlackColor
+            Pal.Main = Color3.fromRGB(148, 0, 211)     -- 库 VioletColor
+            Pal.Lite = Color3.fromRGB(186, 85, 255)    -- 库 SoftVioletColor
+            return
+        end
+        local A = ReadAccent()
+        local White = Color3.new(1, 1, 1)
+        -- 暗端：强调色向深蓝灰压 45%（不压到纯黑）→ 明暗柔和"中和"
+        -- 亮端：强调色向白提 62%（不刺眼纯白）→ 有颜色、不出现固定白色中点
+        Pal.Dark = A:Lerp(Color3.new(0.12, 0.16, 0.26), 0.45)
+        Pal.Main = A:Lerp(White, 0.10)
+        Pal.Lite = A:Lerp(White, 0.62)
+    end
+
+    -- 库 MakeVioletBlackGradient / MakeVioletBlackSequence 原样结构：
+    --   c1 = Black:Lerp(Violet,      sin(t*2π)        ...)
+    --   c2 = SoftViolet:Lerp(Black,  sin(t*2π + 1.2)  ...)
+    --   c3 = Violet:Lerp(Black,      sin(t*2π + 2.4)  ...)
+    --   c4 = Black:Lerp(SoftViolet,  sin(t*2π + 3.6)  ...)
+    -- 这里把 Black / Violet / SoftViolet 换成 Pal.Dark / Pal.Main / Pal.Lite。
+    local TWO_PI = math.pi * 2
+    local function MakeGradient(Shift)
+        local t = Shift % 1
+        local S1 = (math.sin(t * TWO_PI)        + 1) * 0.5
+        local S2 = (math.sin(t * TWO_PI + 1.2)  + 1) * 0.5
+        local S3 = (math.sin(t * TWO_PI + 2.4)  + 1) * 0.5
+        local S4 = (math.sin(t * TWO_PI + 3.6)  + 1) * 0.5
+        local D, V, L = Pal.Dark, Pal.Main, Pal.Lite
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0,    D:Lerp(V, S1)),
+            ColorSequenceKeypoint.new(0.33, L:Lerp(D, S2)),
+            ColorSequenceKeypoint.new(0.66, V:Lerp(D, S3)),
+            ColorSequenceKeypoint.new(1,    D:Lerp(L, S4)),
+        })
+    end
+
+    -- ---------------------- 目标筛选 ----------------------
+    local function Eligible(Object)
+        if not M.Enabled or Seen[Object] then return false end
+        local IsText = IsTextObject(Object)
+        local IsIcon = IsIconObject(Object)
+        if not (IsText or IsIcon) then return false end
+        if Object:IsA("TextBox") and not M.IncludeTextBox then return false end
+        if NameBlocked(Object) then return false end
+
+        -- 父级链同判（避免辉光 / 玻璃高光容器下的东西被误挂）
+        local Parent, Depth = Object.Parent, 0
+        while Parent and Depth < 4 do
+            if NameBlocked(Parent) then return false end
+            Parent = Parent.Parent
+            Depth = Depth + 1
+        end
+
+        if IsText then
+            local Tr = SafeGet(Object, "TextTransparency")
+            if Tr and Tr >= 0.99 then return false end       -- 全透明占位
+            local Tx = SafeGet(Object, "Text")
+            if Tx == nil or Tx == "" then return false end
+        else
+            local Tr = SafeGet(Object, "ImageTransparency")
+            if Tr and Tr >= 0.99 then return false end
+            local Sz = SafeGet(Object, "AbsoluteSize")
+            if Sz and (Sz.X > M.IconMaxSize or Sz.Y > M.IconMaxSize) then return false end
         end
         return true
     end
 
-    local function GetRoot()
-        local Ok, Root = pcall(function()
-            if typeof(Library.ScreenGui) == "Instance" then return Library.ScreenGui end
-            local Reg = Library.Registry
-            if type(Reg) == "table" then
-                for Inst in pairs(Reg) do
-                    if typeof(Inst) == "Instance" then
-                        local R = Inst:FindFirstAncestorOfClass("ScreenGui")
-                        if R then return R end
+    local function Attach(Object)
+        if not Eligible(Object) then return end
+        Seen[Object] = true
+
+        local Ok, Grad = pcall(function()
+            local G = Object:FindFirstChildOfClass("UIGradient")
+            if G then
+                -- 已有渐变：默认不动，避免与旧模块 SyncDynamicGradients 互相覆盖
+                if not M.TakeOverExisting then return nil end
+            else
+                G = Instance.new("UIGradient")
+                G.Name = "YXLibFlowGradient"
+                G.Rotation = 0
+                G.Parent = Object
+            end
+            return G
+        end)
+        if not Ok or not Grad then return end
+
+        Targets[Object] = Grad
+        local Tx = IsTextObject(Object) and SafeGet(Object, "Text") or nil
+        FontTag[Object] = (Tx ~= nil and string.find(Tx, "<font", 1, true) ~= nil) or false
+    end
+
+    -- ---------------------- 扫描范围 ----------------------
+    -- 主 ScreenGui + CoreGui 下所有以 "Obsidian" 开头的 ScreenGui
+    -- （下拉菜单 / 颜色选择器 / 对话框 / 通知等运行时新建的独立 ScreenGui 也能覆盖）
+    local function CollectRoots(Out)
+        local function Add(R)
+            if R and typeof(R) == "Instance" then
+                Out[#Out + 1] = R
+            end
+        end
+        Add(SafeGet(Library, "ScreenGui"))
+        Add(SafeGet(Library, "Floats"))
+        Add(SafeGet(Library, "KeybindFrame"))
+        local Ok, CoreGui = pcall(function() return game:GetService("CoreGui") end)
+        if Ok and CoreGui then
+            pcall(function()
+                for _, Child in ipairs(CoreGui:GetChildren()) do
+                    if Child:IsA("ScreenGui") and string.sub(Child.Name or "", 1, 8) == "Obsidian" then
+                        Add(Child)
                     end
                 end
-            end
-        end)
-        return (Ok and Root) or nil
-    end
-
-    local function Register(Grad, Kind, Own)
-        if Items[Grad] then return end
-        local OX, OY = 0, 0
-        pcall(function()
-            local O = Grad.Offset
-            if O then OX, OY = O.X or 0, O.Y or 0 end
-        end)
-        Items[Grad] = { OX = OX, OY = OY, Kind = Kind }
-        if Own then Owned[Grad] = true; OwnedCount = OwnedCount + 1 end
-    end
-
-    local function ChildGradient(O)
-        local Ok, Found = pcall(function()
-            for _, C in ipairs(O:GetChildren()) do
-                if C:IsA("UIGradient") then return C end
-            end
-        end)
-        return (Ok and Found) or nil
-    end
-
-    local function IsText(O)
-        return O:IsA("TextLabel") or O:IsA("TextButton") or O:IsA("TextBox")
-    end
-    local function IsIcon(O)
-        return O:IsA("ImageLabel") or O:IsA("ImageButton")
-    end
-
-    -- 只接管固定小尺寸图标；背景图 / 辉光 / 玻璃高光 / 遮罩一律跳过
-    local function IconOK(O)
-        local Ok, Good = pcall(function()
-            local Low = string.lower(tostring(O.Name or ""))
-            for _, kw in ipairs(M.IconSkipNames) do
-                if Low:find(kw, 1, true) then return false end
-            end
-            if type(O.ImageTransparency) == "number" and O.ImageTransparency >= 0.99 then
-                return false
-            end
-            local S = O.Size
-            if not (S and S.X and S.Y) then return false end
-            local xs, xo = S.X.Scale or 0, S.X.Offset or 0
-            local ys, yo = S.Y.Scale or 0, S.Y.Offset or 0
-            if xs > 0.01 or ys > 0.01 then return false end  -- 拉伸型 = 背景
-            return xo > 0 and yo > 0 and xo <= M.IconMaxSize and yo <= M.IconMaxSize
-        end)
-        return (Ok and Good == true) or false
-    end
-
-    -- 开发者名单特征：方括号 + <font color="rgb(...)">  -> 交给 ② YXCharFlow
-    local function IsCharFlowTarget(T)
-        return T:find("[", 1, true) ~= nil
-           and T:find("<font", 1, true) ~= nil
-           and T:find("rgb(", 1, true) ~= nil
-    end
-
-    local function Process(O)
-        if Seen[O] then return end
-
-        if IsText(O) then
-            if M.SkipTextBox and O:IsA("TextBox") then Seen[O] = true; return end
-            local T, TT = nil, 0
-            pcall(function() T = O.Text; TT = O.TextTransparency end)
-            if type(T) ~= "string" or T == "" then return end  -- 库后赋文字，留待补扫
-            if type(TT) == "number" and TT >= 0.99 then Seen[O] = true; return end
-            if IsCharFlowTarget(T) then Seen[O] = true; return end
-            local Grad = ChildGradient(O)
-            if Grad then
-                -- 已有任意渐变的文字（标题逐词 / 自定义）都不动，避免误碰
-                Seen[O] = true
-                return
-            end
-            if not M.TextEnabled then return end
-            if OwnedCount >= M.MaxOwned then Seen[O] = true; return end
-            local G = Instance.new("UIGradient")
-            G.Name     = M.TextGradName
-            G.Rotation = 0
-            G.Color    = SeqText
-            G.Offset   = Vector2.new(0, 0)
-            G.Parent   = O
-            Register(G, "text", true)
-            Seen[O] = true
-            return
-        end
-
-        if IsIcon(O) then
-            if not M.IconEnabled then Seen[O] = true; return end
-            if not IconOK(O) then Seen[O] = true; return end
-            if ChildGradient(O) then Seen[O] = true; return end
-            if OwnedCount >= M.MaxOwned then Seen[O] = true; return end
-            local G = Instance.new("UIGradient")
-            G.Name     = M.IconGradName
-            G.Rotation = 0
-            G.Color    = SeqIcon
-            G.Offset   = Vector2.new(0, 0)
-            G.Parent   = O
-            Register(G, "icon", true)
-            Seen[O] = true
-            return
-        end
-
-        if O:IsA("UIGradient") then
-            if M.GradientNames[O.Name] and M.GradientEnabled then
-                Register(O, "grad", false)
-            end
-            Seen[O] = true
-            return
-        end
-        Seen[O] = true
-    end
-
-    local function Scan()
-        local Root = GetRoot()
-        if not Root then return end
-        pcall(function()
-            for _, O in ipairs(Root:GetDescendants()) do Process(O) end
-        end)
-    end
-
-    local Phase, PhaseG = 0, 0
-    local Cycle = 1 / PeakCount()
-    local WriteAcc, ScanAcc, ThemeAcc, Last = 0, 0, 0, os.clock()
-    local Conn, AddedConn
-
-    local function Tick(Dt)
-        if not M.Enabled then return end
-        local Now  = os.clock()
-        local Raw  = (type(Dt) == "number" and Dt > 0 and Dt) or (Now - Last)
-        if Raw < 0 then Raw = 0 end
-        local Step = Raw > 0.1 and 0.1 or Raw   -- 相位防跳帧
-        Last = Now
-
-        Phase  = (Phase  + Step * M.Speed) % Cycle
-        PhaseG = (PhaseG + Step * M.GradientSpeed) % 1
-        -- 补扫 / 主题检查用真实时间，卡顿后也能及时触发
-        WriteAcc, ScanAcc, ThemeAcc = WriteAcc + Raw, ScanAcc + Raw, ThemeAcc + Raw
-
-        if ScanAcc >= M.ScanInterval then ScanAcc = 0; Scan() end
-        if ThemeAcc >= M.ThemeCheckInterval then ThemeAcc = 0; RefreshSequences(false) end
-        if WriteAcc < M.Interval then return end
-        WriteAcc = 0
-
-        local Shift  = -Phase                                    -- 文字 / 图标：单向平移
-        local ShiftG = math.sin(PhaseG * 2 * math.pi) * M.GradientAmplitude
-        for Grad, Info in pairs(Items) do
-            local On = (Info.Kind == "text" and M.TextEnabled)
-                    or (Info.Kind == "icon" and M.IconEnabled)
-                    or (Info.Kind == "grad" and M.GradientEnabled)
-            if On then
-                local S = (Info.Kind == "grad") and ShiftG or Shift
-                pcall(function() Grad.Offset = Vector2.new(Info.OX + S, Info.OY) end)
-            end
-        end
-    end
-
-    function M:Enable()
-        M.Enabled = true
-        RefreshSequences(true)
-        Scan()
-        if not Heartbeat or Conn then return self end
-        Last = os.clock()
-        local Root = GetRoot()
-        if Root and Root.DescendantAdded then
-            pcall(function()
-                AddedConn = Root.DescendantAdded:Connect(function(O) pcall(Process, O) end)
             end)
         end
-        local Ok, C = pcall(function()
-            return Heartbeat:Connect(function(Dt) pcall(Tick, Dt) end)
-        end)
-        if Ok then Conn = C end
-        return self
-    end
-
-    function M:Stop()
-        M.Enabled = false
-        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
-        if AddedConn then pcall(function() AddedConn:Disconnect() end); AddedConn = nil end
-        for Grad, Info in pairs(Items) do
-            pcall(function() Grad.Offset = Vector2.new(Info.OX, Info.OY) end)
-        end
-        for Grad in pairs(Owned) do pcall(function() Grad:Destroy() end) end
-        Items  = setmetatable({}, { __mode = "k" })
-        Seen   = setmetatable({}, { __mode = "k" })
-        Owned  = setmetatable({}, { __mode = "k" })
-        OwnedCount = 0
-        return self
-    end
-
-    function M:SetSaturation(V)
-        if type(V) == "number" then M.PlainSaturation = V; RefreshSequences(true) end
-        return self
-    end
-
-    function M:SetSpeed(V)
-        if type(V) == "number" and V > 0 then M.Speed = V end
-        return self
-    end
-
-    return M
-end)(Library)
-
-YXAllFlow:Enable()
-
-
--- ============================================================================
--- ② 开发者名单「只让方括号内名字逐字滚动 + 明暗中和」
---
--- 改动（相对上一版逐字流动）：
---   · 上一版把【整行】(含 [ ]、中文描述、空格) 都拆成逐字 <font> 一起滚动，
---     这次按可见字符里的 [ ... ] 划界：只有【括号内】的名字逐字滚动，
---     括号外的描述文字保持原本的白色静态，不再被拆、不再闪。
---   · 上一版 DarkAmount=0.42 / BrightWhite=0.72 -> 一暗一白，某些字母几乎
---     看不见。这次「中和」：暗端只降到原色的 0.82，亮端只向白靠 0.18，
---     色相完全不变（青还是青、紫还是紫、黄还是黄），只是柔和地明暗流动。
---   · 想让括号外描述也轻微流动：把 M.FlowOutside 改成 true 即可。
---   · 只接管界面里「含 [ + <font color=rgb(...)」的那几行，其它文字由 ① 负责。
---     原文会保存，Stop 可完整还原。
--- ============================================================================
-local YXCharFlow = (function(Library)
-    local M = {}
-
-    M.Enabled          = true
-    M.Speed            = 0.35    -- 颜色沿字符滚动速度（每秒多少轮）
-    M.Interval         = 1 / 12  -- 文本重建频率（重写 RichText 较重，别太高）
-    M.ScanInterval     = 0.8     -- 新标签补扫间隔
-    M.Cycles           = 1.6     -- 一行里同时几条亮带
-    M.DarkAmount       = 0.82    -- 暗端 = 原色 * 0.82（中和：不再发黑）
-    M.BrightWhite      = 0.18    -- 亮端 = 原色向白靠 0.18（中和：不再惨白）
-    M.FlowOutside      = false   -- 括号外描述是否也轻微流动（默认只滚括号内）
-    M.OutsideAmplitude = 0.5     -- FlowOutside 打开时的波动幅度（比括号内更柔）
-    M.KeepBold         = true    -- 外层保留 <b> 加粗
-    M.KeepStroke       = false   -- 外层补回原 <stroke> 黑描边（默认关）
-    M.MaxTargets       = 40
-    M.Name             = "YXCharFlow"
-
-    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
-    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
-
-    local Targets = setmetatable({}, { __mode = "k" })  -- [Label] = {Chars, Orig, OrigRich, Stroke}
-    local Seen    = setmetatable({}, { __mode = "k" })
-    local Count   = 0
-
-    local function Clamp(V, Lo, Hi)
-        if V < Lo then return Lo end
-        if V > Hi then return Hi end
-        return V
-    end
-
-    local function Escape(Ch)
-        if Ch == "&" then return "&amp;" end
-        if Ch == "<" then return "&lt;" end
-        if Ch == ">" then return "&gt;" end
-        return Ch
-    end
-
-    -- 解析 RichText -> { {Ch, R,G,B, InBracket}, ... }
-    -- 只认 <font color="rgb(r,g,b)"> 与 </font>；<b>/<stroke> 等标签跳过。
-    -- InBracket：可见字符 [ 之后、] 之前（不含方括号本身）。
-    local function ParseRich(Text)
-        local Out, Stack = {}, { { 255, 255, 255 } }
-        local Stroke, Depth = nil, 0
-        local i, n = 1, #Text
-        while i <= n do
-            local b = Text:byte(i)
-            if b == 60 then  -- '<'
-                local j = Text:find(">", i + 1, true)
-                if j then
-                    local Tag = Text:sub(i, j)
-                    local Low = Tag:lower()
-                    if not Stroke and Low:find("<stroke", 1, true)
-                       and not Low:find("</", 1, true) then
-                        Stroke = Tag
-                    end
-                    if Low:find("</font", 1, true) then
-                        if #Stack > 1 then table.remove(Stack) end
-                    elseif Low:find("<font", 1, true) then
-                        local r, g, bl = Tag:match("rgb%(%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*%)")
-                        if r then
-                            Stack[#Stack + 1] = { tonumber(r), tonumber(g), tonumber(bl) }
-                        else
-                            Stack[#Stack + 1] = Stack[#Stack]
-                        end
-                    end
-                    i = j + 1
-                else
-                    local C = Stack[#Stack]
-                    Out[#Out + 1] = { Ch = "<", R = C[1], G = C[2], B = C[3], InBracket = Depth > 0 }
-                    i = i + 1
-                end
-            else
-                local L = 1
-                if b >= 0xF0 then L = 4
-                elseif b >= 0xE0 then L = 3
-                elseif b >= 0xC0 then L = 2 end
-                if i + L - 1 > n then L = 1 end
-                local Ch = Text:sub(i, i + L - 1)
-                local C = Stack[#Stack]
-                local InB = Depth > 0
-                if Ch == "[" then
-                    Depth = 1
-                    Out[#Out + 1] = { Ch = Ch, R = C[1], G = C[2], B = C[3], InBracket = false }
-                elseif Ch == "]" then
-                    Depth = 0
-                    Out[#Out + 1] = { Ch = Ch, R = C[1], G = C[2], B = C[3], InBracket = false }
-                else
-                    Out[#Out + 1] = { Ch = Ch, R = C[1], G = C[2], B = C[3], InBracket = InB }
-                end
-                i = i + L
-            end
-        end
-        return Out, Stroke
-    end
-
-    -- 中和后的柔和明暗：暗端 = 原色*DarkAmount，亮端 = 原色向白靠 BrightWhite
-    local function Shade(It, Wave, Amp)
-        local W = 0.5 + (Wave - 0.5) * Amp
-        local r, g, b = It.R, It.G, It.B
-        local D, BW = M.DarkAmount, M.BrightWhite
-        local dr, dg, db = r * D, g * D, b * D
-        local br, bg, bb = r + (255 - r) * BW, g + (255 - g) * BW, b + (255 - b) * BW
-        local cr = math.floor(Clamp(dr + (br - dr) * W, 0, 255) + 0.5)
-        local cg = math.floor(Clamp(dg + (bg - dg) * W, 0, 255) + 0.5)
-        local cb = math.floor(Clamp(db + (bb - db) * W, 0, 255) + 0.5)
-        return cr, cg, cb
-    end
-
-    local function BuildText(Chars, Phase, Stroke)
-        local N = #Chars
-        if N == 0 then return "" end
-        local Out = {}
-        for I, It in ipairs(Chars) do
-            local T = (I - 1) / math.max(1, N - 1)
-            local Wave = 0.5 + 0.5 * math.sin(2 * math.pi * (T * M.Cycles - Phase))
-            local cr, cg, cb
-            if It.InBracket then
-                cr, cg, cb = Shade(It, Wave, 1.0)
-            elseif M.FlowOutside then
-                cr, cg, cb = Shade(It, Wave, M.OutsideAmplitude)
-            else
-                cr, cg, cb = It.R, It.G, It.B       -- 括号外：静态原色
-            end
-            Out[#Out + 1] = ('<font color="rgb(%d, %d, %d)">%s</font>')
-                :format(cr, cg, cb, Escape(It.Ch))
-        end
-        local S = table.concat(Out)
-        if M.KeepStroke and Stroke then S = Stroke .. S .. "</stroke>" end
-        if M.KeepBold then S = "<b>" .. S .. "</b>" end
-        return S
-    end
-
-    local function IsTarget(O)
-        if not (O:IsA("TextLabel") or O:IsA("TextButton")) then return false end
-        local T = nil
-        pcall(function() T = O.Text end)
-        return type(T) == "string"
-           and T:find("[", 1, true) ~= nil
-           and T:find("<font", 1, true) ~= nil
-           and T:find("rgb(", 1, true) ~= nil
-    end
-
-    local function Attach(O)
-        if Count >= M.MaxTargets then return end
-        local T, Rich = nil, nil
-        pcall(function() T = O.Text; Rich = O.RichText end)
-        if type(T) ~= "string" or T == "" then return end
-        local Chars, Stroke = ParseRich(T)
-        if #Chars < 2 then return end
-        -- 没找到方括号就不接管，避免误伤其它 <font> 文本
-        local HasBracket = false
-        for _, It in ipairs(Chars) do
-            if It.Ch == "[" then HasBracket = true; break end
-        end
-        if not HasBracket then return end
-        Targets[O] = { Chars = Chars, Orig = T, OrigRich = Rich, Stroke = Stroke }
-        pcall(function() O.RichText = true end)
-        pcall(function() O.Text = BuildText(Chars, 0, Stroke) end)
-        Count = Count + 1
-    end
-
-    local function GetRoot()
-        local Ok, Root = pcall(function()
-            if typeof(Library.ScreenGui) == "Instance" then return Library.ScreenGui end
-            local Reg = Library.Registry
-            if type(Reg) == "table" then
-                for Inst in pairs(Reg) do
-                    if typeof(Inst) == "Instance" then
-                        local R = Inst:FindFirstAncestorOfClass("ScreenGui")
-                        if R then return R end
-                    end
-                end
-            end
-        end)
-        return (Ok and Root) or nil
+        return Out
     end
 
     local function Scan()
-        local Root = GetRoot()
-        if not Root then return end
-        pcall(function()
-            for _, O in ipairs(Root:GetDescendants()) do
-                if not Seen[O] then
-                    if IsTarget(O) then
-                        local Ok = pcall(Attach, O)
-                        if Ok then Seen[O] = true end
-                    else
-                        Seen[O] = true
-                    end
-                end
-            end
-        end)
-    end
-
-    local Phase, WriteAcc, ScanAcc, Last = 0, 0, 0, os.clock()
-    local Conn, AddedConn
-
-    local function Tick(Dt)
-        if not M.Enabled then return end
-        local Now  = os.clock()
-        local Raw  = (type(Dt) == "number" and Dt > 0 and Dt) or (Now - Last)
-        if Raw < 0 then Raw = 0 end
-        local Step = Raw > 0.1 and 0.1 or Raw
-        Last = Now
-        Phase = (Phase + Step * M.Speed) % 1
-        WriteAcc, ScanAcc = WriteAcc + Raw, ScanAcc + Raw
-        if ScanAcc >= M.ScanInterval then ScanAcc = 0; Scan() end
-        if WriteAcc < M.Interval then return end
-        WriteAcc = 0
-        for Label, Info in pairs(Targets) do
-            local Alive = false
-            pcall(function() Alive = Label.Parent ~= nil end)
-            if not Alive then
-                Targets[Label] = nil
-                Count = math.max(0, Count - 1)
-            else
-                pcall(function() Label.Text = BuildText(Info.Chars, Phase, Info.Stroke) end)
-            end
-        end
-    end
-
-    function M:Enable()
-        M.Enabled = true
-        Scan()
-        if not Heartbeat or Conn then return self end
-        Last = os.clock()
-        local Root = GetRoot()
-        if Root and Root.DescendantAdded then
-            pcall(function()
-                AddedConn = Root.DescendantAdded:Connect(function(O)
-                    pcall(function()
-                        if not Seen[O] and IsTarget(O) then
-                            Attach(O); Seen[O] = true
-                        end
-                    end)
+        if Library.Unloaded then return end
+        local Roots = CollectRoots({})
+        for _, Root in ipairs(Roots) do
+            if not BoundRoot[Root] then
+                BoundRoot[Root] = true
+                pcall(function()
+                    Library:GiveSignal(Root.DescendantAdded:Connect(function(Object)
+                        pcall(Attach, Object)
+                    end))
                 end)
-            end)
-        end
-        local Ok, C = pcall(function()
-            return Heartbeat:Connect(function(Dt) pcall(Tick, Dt) end)
-        end)
-        if Ok then Conn = C end
-        return self
-    end
-
-    function M:Stop()
-        M.Enabled = false
-        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
-        if AddedConn then pcall(function() AddedConn:Disconnect() end); AddedConn = nil end
-        for Label, Info in pairs(Targets) do
+            end
             pcall(function()
-                Label.Text = Info.Orig
-                if Info.OrigRich ~= nil then Label.RichText = Info.OrigRich end
+                for _, Object in ipairs(Root:GetDescendants()) do
+                    pcall(Attach, Object)
+                end
             end)
-            Targets[Label] = nil
+            pcall(Attach, Root)
         end
-        Seen = setmetatable({}, { __mode = "k" })
-        Count = 0
+    end
+
+    -- ---------------------- 每帧驱动（库同款：每帧重建 ColorSequence） ----------------------
+    local WHITE = Color3.new(1, 1, 1)
+
+    local function Tick(dt)
+        if Library.Unloaded or not M.Enabled then return end
+
+        ThemeAcc = ThemeAcc + dt
+        if ThemeAcc >= M.ThemeInterval then
+            ThemeAcc = 0
+            pcall(BuildPalette)
+        end
+        ScanAcc = ScanAcc + dt
+        if ScanAcc >= M.ScanInterval then
+            ScanAcc = 0
+            pcall(Scan)
+        end
+
+        Acc = Acc + dt
+        -- 首帧强制执行（不等降频间隔），否则白基底要等 1/30 秒才铺上，会闪一下原色
+        if not FirstFrame and M.Interval > 0 and Acc < M.Interval then return end
+        FirstFrame = false
+        Acc = 0
+
+        -- ★ 库的核心：每帧重新构造整个 ColorSequence，颜色本身在流动
+        local Clock = os.clock()
+        local Seq = MakeGradient(Clock * M.Speed)
+        local Off = Vector2.new((Clock * M.OffsetSpeed) % 2 - 1, 0)
+        local Rot = (M.Sway ~= 0) and (math.sin(Clock * 0.85) * M.Sway) or 0
+
+        for Object, Grad in pairs(Targets) do
+            if Object.Parent == nil then
+                Targets[Object] = nil
+            else
+                pcall(function()
+                    -- ① 旧模块的 SyncDynamicGradients 每帧可能把复用的渐变
+                    --    Enabled 关掉 / 改 Color / 改 Rotation，这里每帧最后写回，
+                    --    保证流光始终盖住它（本模块的连接在文件末尾，最后执行）。
+                    Grad.Enabled = true
+                    Grad.Rotation = Rot
+                    Grad.Color  = Seq
+                    Grad.Offset = Off
+                    -- ② 白基底：UIGradient 与文字像素相乘，白是恒等元；
+                    --    库每帧也强制刷白，用来对抗 UpdateColorsUsingRegistry 刷回主题色。
+                    if IsTextObject(Object) then
+                        if M.WhiteBase and not (M.KeepRichTextColor and FontTag[Object]) then
+                            Object.TextColor3 = WHITE
+                        end
+                    elseif M.IconWhiteBase then
+                        Object.ImageColor3 = WHITE
+                    end
+                end)
+            end
+        end
+    end
+
+    -- ---------------------- 开关 ----------------------
+    function M:Enable()
+        M.Enabled = true
+        FirstFrame = true
+        pcall(BuildPalette)
+        pcall(Scan)
+        if not Started and Heartbeat then
+            Started = true
+            local Ok = pcall(function()
+                Conn = Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
+                Library:GiveSignal(Conn)   -- 交给库统一断开，卸载不残留
+            end)
+            if not Ok then Started = false end
+        end
+        pcall(Tick, 0)   -- 首帧立刻铺上，不等第一个 Interval
         return self
     end
 
-    function M:SetSpeed(V)
-        if type(V) == "number" then M.Speed = V end
+    function M:Disable()
+        M.Enabled = false
+        if Conn then
+            pcall(function() Conn:Disconnect() end)
+            Conn, Started = nil, false
+        end
+        for Object, Grad in pairs(Targets) do
+            pcall(function()
+                if Grad.Name == "YXLibFlowGradient" then Grad:Destroy() end
+            end)
+            Targets[Object] = nil
+        end
+        for K in pairs(Seen) do Seen[K] = nil end
+        for K in pairs(FontTag) do FontTag[K] = nil end
+        pcall(function() Library:UpdateColorsUsingRegistry() end)
+        return self
+    end
+
+    -- 运行时改配置可用：YXLibTextFlow:SetSpeed(0.45)
+    function M:SetSpeed(V) M.Speed = V; return self end
+    function M:SetPalette(UseLibrary)
+        M.UseLibraryPalette = UseLibrary and true or false
+        pcall(BuildPalette)
         return self
     end
 
     return M
 end)(Library)
 
-YXCharFlow:Enable()
+YXLibTextFlow:Enable()
+-- ============================================================================
