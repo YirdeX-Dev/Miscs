@@ -39,8 +39,10 @@ local DefaultThemeBackground = {
     Images = {
         "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
     },
+
     -- 只保留「背景 1」，启动即用它（已删除背景 2 / 背景 3 及其切换逻辑）
     StartupImageIndex = 1,
+
     -- 主题切换触发
     TriggerNames = { "Default" },  -- 视为「默认主题」的主题名
     MatchAssignedDefault = true,   -- 同时匹配被「设为默认」的主题名
@@ -83,8 +85,10 @@ local DefaultThemeBackground = {
     -- 强调色填充（开关底色 / 滑块填充 / 通知进度条）：与按钮同款主题色自适应。
     --   方向默认自动：开关这种矮胖胶囊用竖向（圆点盖住右半边，横向渐变只剩左半截，看不出），
     --   滑块填充 / 通知进度条这种细长条用水平；把 AutoOrient 关掉则统一听 AccentGradientAngle
-    AccentGradientAngle = 0,    -- 0=水平左→右, 90=垂直上→下(对应 ButtonGradientAngle=180), nil=跟随 GradientRotation
-    AccentGradientDarkAmount = 0.40, -- 强调色填充的加深幅度：下端 = 亮端 x 此值（0.40 = 跨度 2.5 倍）
+    -- 滑块填充渐变：改成约 45° 斜向（不再是纯水平/纯垂直），亮暗沿对角线分布，
+    --   右端不会整条压暗发灰；配合下面把末端压暗幅度调高，解决「拖到后面不明显」。
+    AccentGradientAngle = 45,   -- 45=斜向渐变（细长条滑块/进度条用；开关仍自动走竖向）
+    AccentGradientDarkAmount = 0.72, -- 末端 = 亮端 x 此值（原 0.40 太暗 -> 0.72 右端更明显）
     AccentGradientSafeLum = 0.62,    -- 强调色填充亮端亮度上限；按钮为了白字压到 0.15，
                                      --   开关没有文字，放宽到 0.62，亮端保持主题色本身的鲜艳度
     AccentGradientAutoOrient = true, -- 自动选方向：矮胖控件(开关胶囊)用竖向，细长条(滑块/进度条)用水平
@@ -99,8 +103,8 @@ local DefaultThemeBackground = {
     -- 滑块：轨道（未填充的右半段）也跟随主题色，与填充形成同色系明暗对比
     EnableSliderTrackGradient = true,
     SliderTrackTint = 0.22,          -- 轨道混入主题色的比例（比填充低，才不会和已填段糊在一起）
-    SliderTrackAngle = 0,            -- Roblox 原生角度：0 = 左->右（横条用水平最自然）
-    SliderTrackDarkAmount = 0.35,    -- 轨道右端亮度 = 左端 x 此值
+    SliderTrackAngle = 45,           -- 轨道与填充统一约 45° 斜向，避免两条渐变方向打架
+    SliderTrackDarkAmount = 0.68,    -- 轨道末端亮度（原 0.35 太暗 -> 0.68 到后面仍看得清）
     -- 青 -> 蓝 -> 靛（仅图标使用；按钮和开关都改成跟随主题色了）
     GradientStops = {
         { 0.0, { 34, 211, 238 } },   -- #22D3EE 青
@@ -870,7 +874,7 @@ end
 
 -- 实际角度：开关是矮胖胶囊，圆点盖住右半边，横向渐变只剩左半截 -> 看不出；
 --   这类控件改竖向，露出来的左半区正好走完 亮 -> 暗 的整条渐变。
---   滑块填充 / 通知进度条是细长条，竖向几乎看不出，仍用水平。
+--   滑块填充 / 通知进度条是细长条，用配置的基础角度（当前 45° 斜向）。
 function DefaultThemeBackground:GetAccentRotationFor(Inst)
     local Base = self:GetAccentGradientRotation()
     if not self.AccentGradientAutoOrient or not Inst then return Base end
@@ -1650,13 +1654,6 @@ Bg:Enable()
 
 SaveManager:LoadAutoloadConfig()
 
-Library:Notify({
-    Title = "YX-XXX",
-    Description = "YX-XXX已加载成功",
-    Icon = "check",
-    Time = 4,
-})
-
 --    YXGradientBorder:Enable()          -- 窗口 + 标签页一起开（默认）
 --    YXGradientBorder:Disable()         -- 全部关闭
 --    YXGradientBorder:EnableTabs()      -- 只开标签页边框
@@ -1679,15 +1676,17 @@ Library:Notify({
 --    YXGradientBorder:SetNotifThickness(2)    -- 通知描边粗细
 --  通知由库动态创建/销毁，模块每 0.2s 差量扫描 Library.Notifications，自动挂载与清理。
 --  窗口 / 标签页 / 通知边框统一「跟随主题强调色 + 雾蓝调和」，切主题一起换色，不再写死青色。
---  窗口辉光移植自 NOL-Obsidian 库自带 WindowGlow：
---    一张外扩 10px 的 ImageLabel（库 assets/Glow.png 辉光贴图），垫在窗口后面，
---    颜色同样跟随主题强调色（雾蓝调和后再经库 GetBetterColor 微调），换主题自动跟着变。
---  修正：辉光挂 ScreenGui 作为「窗口同级兄弟」、ZIndex 低于窗口，并跟随窗口位置/尺寸/显隐。
---    NOL 原库 ScreenGui 用 Global，Parent=MainFrame + ZIndex=-1 能垫到窗口后；
---    本脚本用的是 Sibling 库，子对象负 ZIndex 压不到父级背景之后（会盖进窗口里面）。
---  这是「辉光贴图」，不是背景图：不铺内容、不遮控件，只有超出窗口的边缘部分可见。
---  改 YXGradientBorder.Glow.xxx 调整：Offset / Image / Transparency / FollowAccent
---  运行时开关：YXGradientBorder:SetGlow(true / false)
+--  窗口辉光「采用库自带 WindowGlow」：
+--    贴图资源复刻库 CustomImageManager.GetAsset("Glow")：优先库本地 Glow.png
+--    （getcustomasset "Obsidian/assets/Glow.png"），失败回退 RobloxId；颜色沿用库
+--    GetBetterColor(AccentColor, -1) 微调，挂 ScreenGui 作窗口同级兄弟、跟随窗口。
+--  【灰框修复】库 Glow.png 中心约 90% 是实心、仅最外约 5% 羽化；库靠「不透明窗口」
+--    盖住实心中心只露一圈柔光。本脚本窗口带背景图偏透明，实心中心透出来就是一整块
+--    灰蓝矩形（灰框）。故在「辉光(最底) / 遮心板 / 窗口(最上)」之间补一层与窗口等大、
+--    不透明的窗口底色板：只留窗口边框外扩一圈羽化可见 = 真正的边框辉光，灰块消失。
+--  这是「辉光贴图」，不是背景图：不铺内容、不遮控件、不挡点击（Active=false）。
+--  改 YXGradientBorder.Glow.xxx 调整：Offset / LocalPath / Image / Transparency /
+--    FollowAccent / MaskColor / Radius；运行时开关 YXGradientBorder:SetGlow(true / false)
 --  也可直接改 YXGradientBorder.Tabs.xxx / Notifs.xxx（见下方配置表）后即生效。
 -- ============================================================
 
@@ -1739,18 +1738,20 @@ local YXGradientBorder = (function(Library)
         Name           = "YXGradientBorder_Notif",
     }
 
-    -- ===== 窗口辉光（移植自 NOL-Obsidian 库 WindowGlow，只作用于窗口）=====
-    --   做法：ScreenGui 下挂一张与窗口同级、ZIndex 更低的 ImageLabel（Glow.png），
-    --   用绝对坐标对齐「窗口 + 外扩 10px」，并跟随窗口拖动 / 缩放 / 显示隐藏。
-    --   -> 辉光真正垫在窗口后面，实心中心被窗口盖住，只露出外扩一圈柔和光晕。
-    --   颜色跟随主题强调色（雾蓝调和），再用库 GetBetterColor 微调。
-    --   这是辉光贴图，不是背景图：不铺内容、不遮控件、不挡点击。
+    -- ===== 窗口辉光（采用库 WindowGlow + 遮心板修灰框，只作用于窗口）=====
+    --   层级（ScreenGui 同级、Sibling 按 ZIndex）：辉光(mfz-2) < 遮心板(mfz-1) < 窗口(mfz)
+    --   辉光：库 Glow.png 贴图，对齐「窗口 + 外扩 Offset」，跟随窗口拖动 / 缩放 / 显隐。
+    --   遮心板：与窗口等大、不透明、窗口底色、同圆角 —— 盖住辉光贴图的实心中心，
+    --     只留窗口外扩一圈的羽化边可见。库靠不透明窗口盖中心，这里补这块板补上同一前提，
+    --     窗口带背景图半透明也不会再透出灰蓝矩形（灰框）。
     M.Glow = {
         Enabled      = true,
-        Offset       = 10,    -- 向外扩展像素（库默认 20，按真机反馈收窄一半）
-        Image        = "rbxassetid://88645182616510",  -- 库 assets/Glow.png 的 RobloxId
+        Offset       = 30,    -- 向外扩展像素（辉光比窗口大 Offset*2，露出的就是这一圈）
+        LocalPath    = "Obsidian/assets/Glow.png",      -- 库 CustomImageManager 下载到本地的路径
+        Image        = "rbxassetid://88645182616510",  -- 库 assets/Glow.png 的 RobloxId（回退）
         Transparency = 0,     -- 贴图透明度（库窗口版默认 0；调大更淡）
         FollowAccent = true,  -- 跟随 Scheme.AccentColor；关掉则固定为创建时的颜色
+        MaskColor    = nil,   -- 遮心板颜色；nil = 自动跟随当前主题 BackgroundColor
         Name         = "YXWindowGlow",
     }
 
@@ -1759,6 +1760,8 @@ local YXGradientBorder = (function(Library)
     -- ===== 运行时 =====
     local winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
     local winGlow = nil            -- 窗口辉光 ImageLabel（仅窗口有）
+    local winGlowMask = nil        -- 遮心板 Frame（盖住辉光实心中心，消除灰框）
+    local winGlowMaskColor = nil   -- 上次写入遮心板的底色，避免重复赋值
     local winMainFrame = nil       -- 窗口 MainFrame 引用，供辉光跟随位置/尺寸/显隐
     local winGlowColor = nil       -- 上次写入的 ImageColor3，避免每帧重复赋值
     local winConn, tabConn = nil, nil
@@ -1794,6 +1797,28 @@ local YXGradientBorder = (function(Library)
             if Ok and C then return C end
         end
         return Col
+    end
+
+    -- 采用库自带辉光资源：复刻库 CustomImageManager.GetAsset("Glow") 的取图逻辑，
+    --   优先库下载到本地的 Glow.png（getcustomasset），失败再回退同一 RobloxId。
+    local function ResolveGlowImage()
+        local Path = (M.Glow and M.Glow.LocalPath) or "Obsidian/assets/Glow.png"
+        if type(getcustomasset) == "function" then
+            local Ok, Id = pcall(getcustomasset, Path)
+            if Ok and Id and Id ~= "" then return Id end
+        end
+        return (M.Glow and M.Glow.Image) or "rbxassetid://88645182616510"
+    end
+
+    -- 遮心板底色：跟随当前主题的窗口背景色（切主题自动变），回退 MainFrame 背景色。
+    local function ReadWindowBg(mf)
+        local C = nil
+        pcall(function()
+            if Library and Library.Scheme then C = Library.Scheme.BackgroundColor end
+        end)
+        if C then return C end
+        if mf then pcall(function() C = mf.BackgroundColor3 end) end
+        return C or Color3.fromRGB(20, 28, 42)
     end
 
     -- 边框配色：跟随主题强调色（雾蓝调和），主题变化即重建序列，不再写死青色。
@@ -1878,12 +1903,13 @@ local YXGradientBorder = (function(Library)
     end
 
     -- ========================================================
-    -- 窗口辉光：移植自 NOL-Obsidian 库 CreateWindow 里的 Glow ImageLabel。
-    --   【位置修正】不再挂 MainFrame 子级（Sibling 模式下 ZIndex=-1 会盖进窗口里面），
-    --   改为挂 ScreenGui、作为 MainFrame 的同级兄弟，ZIndex 取 MainFrame-1，
-    --   用绝对坐标对齐「窗口 + 外扩 Offset*2」，实心中心被不透明窗口盖住，
-    --   只露出窗口外侧的羽化边 -> 一圈柔和外发光。
-    --   位置 / 尺寸 / Visible 由 syncGlowBounds() 每帧跟随（带变化判断，不产生每帧写入）。
+    -- 窗口辉光：采用库 WindowGlow 贴图 + 遮心板消除灰框。
+    --   Glow.png 中心约 90% 实心、仅最外约 5% 羽化。库把整张图垫在「不透明窗口」后，
+    --   中心被窗口盖住，只露外扩一圈羽化 = 边框柔光。本脚本窗口带背景图偏透明，
+    --   实心中心会透成一整块灰蓝矩形（灰框），故补一层「遮心板」补上这个前提：
+    --     辉光(ZIndex=mfz-2) < 遮心板(mfz-1) < 窗口(mfz)
+    --   遮心板与窗口等大、不透明、窗口底色、同圆角，盖住实心中心；只有超出窗口边缘
+    --   的外扩一圈羽化可见。三者均挂 ScreenGui 同级，由 syncGlowBounds 每帧跟随。
     --   这是辉光贴图，不是背景图：不铺内容、不遮控件、不挡点击（Active=false）。
     -- ========================================================
     local function newGlow(mf)
@@ -1891,27 +1917,49 @@ local YXGradientBorder = (function(Library)
         local Host = mf.Parent          -- ScreenGui：与 MainFrame 同级
         if not Host then return nil end
         local Off = M.Glow.Offset or 10
+        local mfz = 1
+        pcall(function() mfz = mf.ZIndex or 1 end)
         local Ok, L = pcall(function()
-            -- Sibling 模式下，同级比较 ZIndex 才生效：辉光必须低于 MainFrame
-            local mfz = 1
-            pcall(function() mfz = mf.ZIndex or 1 end)
             local G = Instance.new("ImageLabel")
             G.Name = M.Glow.Name or "YXWindowGlow"
             G.BackgroundTransparency = 1
             G.BorderSizePixel = 0
-            G.Image = M.Glow.Image or "rbxassetid://88645182616510"
+            G.Image = ResolveGlowImage()   -- 采用库 Glow 资源（本地优先 / RobloxId 回退）
             G.ImageTransparency = M.Glow.Transparency or 0
             G.ImageColor3 = ReadAccentColor() or Color3.fromRGB(130, 200, 248)
             G.Active = false
-            G.ZIndex = math.max(-1, mfz - 1)   -- 垫在窗口后面，但高于 ModalElement(-999)
+            G.ZIndex = math.max(-2, mfz - 2)   -- 最底层：辉光
             local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
             G.Position = UDim2.fromOffset(ap.X - Off, ap.Y - Off)
             G.Size = UDim2.fromOffset(as.X + Off * 2, as.Y + Off * 2)
-            G.Visible = mf.Visible             -- 窗口收起时辉光一起隐藏
+            G.Visible = mf.Visible
             G.Parent = Host
             return G
         end)
         if not (Ok and L) then return nil end
+
+        -- 遮心板：与窗口等大、不透明、窗口底色、同圆角，盖住辉光实心中心。
+        --   介于辉光与窗口之间，窗口半透明也不会再透出灰蓝实心块（灰框）。
+        pcall(function()
+            local Mask = Instance.new("Frame")
+            Mask.Name = (M.Glow.Name or "YXWindowGlow") .. "Mask"
+            Mask.BorderSizePixel = 0
+            Mask.BackgroundTransparency = 0
+            Mask.BackgroundColor3 = (M.Glow.MaskColor ~= nil and M.Glow.MaskColor) or ReadWindowBg(mf)
+            Mask.Active = false
+            Mask.ZIndex = math.max(-1, mfz - 1)   -- 高于辉光、低于窗口
+            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
+            Mask.Position = UDim2.fromOffset(ap.X, ap.Y)
+            Mask.Size = UDim2.fromOffset(as.X, as.Y)
+            Mask.Visible = mf.Visible
+            Mask.Parent = Host
+            local mc = Instance.new("UICorner")
+            mc.CornerRadius = UDim.new(0, M.Radius or 12)
+            mc.Parent = Mask
+            winGlowMask = Mask
+            winGlowMaskColor = Mask.BackgroundColor3
+        end)
+
         winMainFrame = mf
         winGlowColor = L.ImageColor3
         return L
@@ -1924,6 +1972,16 @@ local YXGradientBorder = (function(Library)
         if C and C ~= winGlowColor then
             winGlowColor = C
             pcall(function() winGlow.ImageColor3 = C end)
+        end
+    end
+
+    -- 遮心板底色跟随主题（切主题时窗口底色变了，遮心板要一起变，避免露出旧色块）
+    local function syncGlowMaskColor()
+        if not winGlowMask then return end
+        local Bg = (M.Glow and M.Glow.MaskColor ~= nil and M.Glow.MaskColor) or ReadWindowBg(winMainFrame)
+        if Bg and Bg ~= winGlowMaskColor then
+            winGlowMaskColor = Bg
+            pcall(function() winGlowMask.BackgroundColor3 = Bg end)
         end
     end
 
@@ -1941,6 +1999,13 @@ local YXGradientBorder = (function(Library)
             if winGlow.Position ~= pos then winGlow.Position = pos end
             if winGlow.Size ~= size then winGlow.Size = size end
             if winGlow.Visible ~= mf.Visible then winGlow.Visible = mf.Visible end
+            if winGlowMask then
+                local mpos = UDim2.fromOffset(ap.X, ap.Y)
+                local msize = UDim2.fromOffset(as.X, as.Y)
+                if winGlowMask.Position ~= mpos then winGlowMask.Position = mpos end
+                if winGlowMask.Size ~= msize then winGlowMask.Size = msize end
+                if winGlowMask.Visible ~= mf.Visible then winGlowMask.Visible = mf.Visible end
+            end
         end)
     end
 
@@ -1978,6 +2043,7 @@ local YXGradientBorder = (function(Library)
             if glowAcc >= 0.12 then
                 glowAcc = 0
                 syncGlowColor()
+                syncGlowMaskColor()
             end
             if M.Pulse then
                 winStroke.Thickness = M.Thickness + math.sin(now * 3) * 0.4
@@ -1989,6 +2055,9 @@ local YXGradientBorder = (function(Library)
     function M:DisableWindow()
         if winConn then pcall(function() winConn:Disconnect() end); winConn = nil end
         if winFrame then pcall(function() winFrame:Destroy() end) end
+        if winGlowMask then pcall(function() winGlowMask:Destroy() end) end
+        winGlowMask = nil
+        winGlowMaskColor = nil
         if winGlow then pcall(function() winGlow:Destroy() end) end
         winGlow = nil
         winGlowColor = nil
@@ -2239,6 +2308,9 @@ local YXGradientBorder = (function(Library)
     function M:SetGlow(State)
         M.Glow.Enabled = State and true or false
         if not M.Glow.Enabled then
+            if winGlowMask then pcall(function() winGlowMask:Destroy() end) end
+            winGlowMask = nil
+            winGlowMaskColor = nil
             if winGlow then pcall(function() winGlow:Destroy() end) end
             winGlow = nil
             winGlowColor = nil
@@ -2311,3 +2383,242 @@ local YXGradientBorder = (function(Library)
 end)(Library)
 
 YXGradientBorder:Enable()
+-- ============================================================================
+-- 窗口标题「流光渐变」：接管 Library:CreateWindow({ Title = "YX-Loader", ... })
+--   生成的 WindowTitle 这个 TextLabel（文字本身不被修改）。
+--   · 流动：文字原地不动，一条更亮的高光带沿文字左右循环扫过
+--           （UIGradient.Offset 逐帧位移，两端同色，循环无接缝）。
+--   · 渐变：配色取自 Library.Scheme.AccentColor，复用模块顶部同一套雾蓝调和，
+--           切换主题时标题渐变和边框 / 按钮 / 滑块一起变，不写死青色。
+--   · 关键：库把 TextColor3 登记成 "FontColor"，主题切换会把它改回字体色，
+--           会把渐变乘暗。这里改成固定白色基底，UIGradient 才能完整显色
+--           （白基底只是乘法基底，不会真的显示成白字）。
+--   · 不修改库、不修改主脚本，只在美化模块里接管这一个 TextLabel。
+-- ============================================================================
+local YXTitleFlow = (function(Library)
+    local M = {}
+
+    -- 可调配置 -------------------------------------------------------------
+    M.Enabled            = true
+    M.Speed              = 0.45    -- 流光速度：每秒扫过多少个标题宽度（0.45 ≈ 2.2 秒一轮）
+    M.Interval           = 1 / 30  -- 属性写入间隔（计时逐帧，写入降到约 30Hz）
+    M.ThemeCheckInterval = 0.12    -- 主题色签名检查间隔
+    M.RetryInterval      = 0.25    -- 窗口尚未创建时的重试间隔
+    M.Rotation           = 0       -- 渐变角度（0 = 水平扫过）
+    M.BaseWhite          = 0.28    -- 常态文字色向白色靠拢比例（保留主题色相）
+    M.HighWhite          = 0.88    -- 高光带向白色靠拢比例（接近白）
+    M.BandWidth          = 0.20    -- 高光带半宽（相对整条渐变）
+    M.Name               = "YXTitleFlow"
+
+    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
+    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
+
+    local Conn, TitleLabel, Grad = nil, nil, nil
+    local Seq, Sig, AppliedSeq = nil, nil, nil
+    local Phase, LastFrame = 0, 0
+    local WriteAcc, ThemeAcc, RetryAcc = 0, 0, 0
+
+    local function Clamp(V, Lo, Hi)
+        if V < Lo then return Lo end
+        if V > Hi then return Hi end
+        return V
+    end
+
+    -- 只靠 Parent 判断存活，不用 IsDescendantOf(game)（真机 UI 不在 game 下会被误杀）
+    local function IsAlive(O)
+        if not O then return false end
+        local Ok, P = pcall(function() return O.Parent end)
+        return Ok and P ~= nil
+    end
+
+    -- 取当前主题强调色（与边框 / 控件同一套雾蓝调和函数）
+    local function AccentColor()
+        local Ok, C = pcall(function()
+            local RGB = YXThemeAccentRGB(Library, true)
+            return Color3.new(RGB[1], RGB[2], RGB[3])
+        end)
+        if Ok and C then return C end
+        local F = Library and Library.Scheme and Library.Scheme.AccentColor
+        return F or Color3.fromRGB(130, 200, 248)
+    end
+
+    local function MixWhite(C, T)
+        return Color3.new(C.R + (1 - C.R) * T,
+                          C.G + (1 - C.G) * T,
+                          C.B + (1 - C.B) * T)
+    end
+
+    -- 常态色 = 主题色提亮；高光色 = 更接近白。0 与 1 端点同色，扫过循环无接缝。
+    local function BuildSequence()
+        local Base = AccentColor()
+        local NewSig = string.format("%.4f,%.4f,%.4f", Base.R, Base.G, Base.B)
+        if Seq and NewSig == Sig then return Seq end
+        Sig = NewSig
+        local Edge = MixWhite(Base, Clamp(M.BaseWhite, 0, 1))
+        local Hi   = MixWhite(Base, Clamp(M.HighWhite, 0, 1))
+        local W    = Clamp(M.BandWidth, 0.05, 0.45)
+        local L    = 0.5 - W
+        local R    = 0.5 + W
+        Seq = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, Edge),
+            ColorSequenceKeypoint.new(L,    Edge),
+            ColorSequenceKeypoint.new(0.50, Hi),
+            ColorSequenceKeypoint.new(R,    Edge),
+            ColorSequenceKeypoint.new(1.00, Edge),
+        })
+        return Seq
+    end
+
+    -- 定位库创建的 WindowTitle：MainFrame -> TopBar(48px) -> TitleHolder(水平 UIListLayout) -> TextLabel
+    local function FindTitleLabel()
+        if not (Library and Library.Window) then return nil end
+        local mf = Library.Window.MainFrame
+        if not (mf and mf.Parent) then return nil end
+        local Ok, Found = pcall(function()
+            local TopBar = nil
+            for _, C in ipairs(mf:GetChildren()) do
+                if C:IsA("Frame") and C.Size and C.Size.X and C.Size.Y
+                   and C.Size.Y.Offset == 48 and C.Size.X.Scale == 1 then
+                    TopBar = C; break
+                end
+            end
+            if not TopBar then return nil end
+            local function BestIn(Node)
+                local Best, BestSize = nil, -1
+                for _, C in ipairs(Node:GetChildren()) do
+                    if C:IsA("TextLabel") and C.Visible ~= false
+                       and type(C.Text) == "string" and #C.Text > 1 then
+                        local Sz = tonumber(C.TextSize) or 0
+                        if Sz > BestSize then Best, BestSize = C, Sz end
+                    end
+                end
+                return Best
+            end
+            for _, C in ipairs(TopBar:GetChildren()) do
+                if C:IsA("Frame") and C.FindFirstChildOfClass
+                   and C:FindFirstChildOfClass("UIListLayout") then
+                    local B = BestIn(C)
+                    if B then return B end
+                end
+            end
+            -- 回退：TopBar 整棵子树里 TextSize 最大的可见长文本 TextLabel
+            local Best, BestSize = nil, -1
+            for _, C in ipairs(TopBar:GetDescendants()) do
+                if C:IsA("TextLabel") and C.Visible ~= false
+                   and type(C.Text) == "string" and #C.Text > 1 then
+                    local Sz = tonumber(C.TextSize) or 0
+                    if Sz > BestSize then Best, BestSize = C, Sz end
+                end
+            end
+            return Best
+        end)
+        return (Ok and Found) or nil
+    end
+
+    local function Attach(Label)
+        local G = Instance.new("UIGradient")
+        G.Name     = M.Name
+        G.Rotation = M.Rotation
+        G.Offset   = Vector2.new(0.5, 0)
+        G.Color    = BuildSequence()
+        G.Parent   = Label
+        -- 白基底 + 固定 Registry 登记：主题切换不再把文字色改回 FontColor
+        pcall(function() Label.TextColor3 = Color3.new(1, 1, 1) end)
+        pcall(function()
+            local Reg = Library.Registry and Library.Registry[Label]
+            if type(Reg) == "table" then Reg.TextColor3 = Color3.new(1, 1, 1) end
+        end)
+        return G
+    end
+
+    local function Tick(dt)
+        if not M.Enabled then return end
+        local Now  = os.clock()
+        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - LastFrame)
+        if Step < 0 then Step = 0 end
+        if Step > 0.1 then Step = 0.1 end   -- 卡顿后不跳一大截
+        LastFrame = Now
+        Phase    = (Phase + Step * M.Speed) % 1
+        WriteAcc = WriteAcc + Step
+        ThemeAcc = ThemeAcc + Step
+        RetryAcc = RetryAcc + Step
+
+        -- 窗口重建 / 标题被销毁：清登记，按 RetryInterval 重新找
+        if not (IsAlive(TitleLabel) and IsAlive(Grad)) then
+            TitleLabel, Grad, Seq, Sig, AppliedSeq = nil, nil, nil, nil, nil
+            if RetryAcc < M.RetryInterval then return end
+            RetryAcc = 0
+            local Found = FindTitleLabel()
+            if not Found then return end
+            TitleLabel = Found
+            Grad = Attach(Found)
+            AppliedSeq = Seq
+            return
+        end
+
+        if WriteAcc < M.Interval then return end
+        WriteAcc = 0
+        -- 白基底守卫（库若在别处改回字体色，这里拉回）
+        pcall(function()
+            local C = TitleLabel.TextColor3
+            if not (C and C.R and C.R > 0.999 and C.G > 0.999 and C.B > 0.999) then
+                TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+            end
+        end)
+        -- 主题签名变化才重建色序列，平时零写入
+        if ThemeAcc >= M.ThemeCheckInterval then
+            ThemeAcc = 0
+            local S = BuildSequence()
+            if S ~= AppliedSeq then
+                AppliedSeq = S
+                pcall(function() Grad.Color = S end)
+            end
+        end
+        -- 流光位移：Offset.X 在 +0.5 ~ -0.5 间循环，亮带沿文字横向反复扫过
+        pcall(function() Grad.Offset = Vector2.new(0.5 - Phase, 0) end)
+    end
+
+    function M:Enable()
+        M.Enabled = true
+        if not Heartbeat or Conn then return self end
+        LastFrame = os.clock()
+        local Ok, C = pcall(function()
+            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
+        end)
+        if Ok then Conn = C end
+        -- 立即接管一次，启动即生效；窗口尚未创建时交给心跳重试
+        local Found = FindTitleLabel()
+        if Found then
+            TitleLabel = Found
+            Grad = Attach(Found)
+            AppliedSeq = Seq
+        end
+        return self
+    end
+
+    function M:Disable()
+        M.Enabled = false
+        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
+        if TitleLabel then
+            pcall(function()
+                local Reg = Library.Registry and Library.Registry[TitleLabel]
+                if type(Reg) == "table" then Reg.TextColor3 = "FontColor" end
+                local F = Library.Scheme and Library.Scheme.FontColor
+                if F then TitleLabel.TextColor3 = F end
+            end)
+        end
+        if Grad then pcall(function() Grad:Destroy() end) end
+        Conn, TitleLabel, Grad = nil, nil, nil
+        Seq, Sig, AppliedSeq = nil, nil, nil
+        return self
+    end
+
+    function M:SetSpeed(V)
+        if type(V) == "number" then M.Speed = V end
+        return self
+    end
+
+    return M
+end)(Library)
+
+YXTitleFlow:Enable()
