@@ -3203,44 +3203,55 @@ end)(Library)
 
 YXLiquidGlass:Enable()
 -- ============================================================================
--- ① 其它文字「亮光带扫过」流动（替换上一版 YXAllFlow 的 Offset 平移方案）
+-- ① 全界面「真·流动」流光：普通文字 + 图标 + 填充渐变
 --
--- 上一版为什么「硬邦邦」：靠 UIGradient.Offset 平移色带，但 Roblox 渐变采样
---   超出 [0,1] 的部分会被 clamp 成端点色，高光带一跑出文字范围就整片消失，
---   于是大部分时间文字是一整片死色，只有偶尔一瞬有光。
--- 这一版：不再挪 Offset，而是每次写入时按当前相位【重建色带】，把若干条
---   「彩色底 -> 纯白亮带 -> 彩色底」的峰值放在移动的位置上。亮带始终在
---   文字内部循环（相位 0 与 1 图案完全一致，无缝），所以一直能看到光在流。
---   · 普通文字：彩色底取饱和化后的主题强调色，切主题一起变；纯白亮带是
---     相乘的恒等元，扫到哪哪就恢复文字自身颜色，因此白字/主题色字都保留色相。
---   · 含 <font color> 的开发者名单：不接管，交给下面的 ② YXCharFlow。
---   · 控件填充渐变（按钮/下拉/菜单/滑块）：仍用 Offset 缓慢正弦往返。
+-- 上一版为什么「不流动 / 只有两边颜色中间白」：
+--   它靠【每帧重建 ColorSequence】(Grad.Color = ...) 来挪亮带。真机上
+--   ColorSequence 每帧重建后赋值刷新并不可靠，且 Peaks=3 时相位推进极小
+--   (一个亮峰走完整条色带要约 7 秒)，看起来就是一条静态的
+--   「彩色底 - 白 - 彩色底」渐变。而本模块里标题/页脚的 YXTitleFlow 用的是
+--   UIGradient.Offset 平移，一直在动 —— 证明 Offset 在真机上可靠。
+--
+-- 这一版：
+--   · 色带【只创建一次】，做成 Peaks 个等间距的「彩色底 -> 纯白亮峰 -> 彩色底」
+--     周期，两端同色；每帧只写 Grad.Offset 一个数值属性（真机必刷新、开销最小）。
+--   · Offset 单向平移，循环长度 = 一个图案周期 1/Peaks，图案首尾一致 => 无缝。
+--     超出 [0,1] 被 clamp 的那一段是彩色底，不会出现「整片死色」；
+--     因为色带有多个亮峰，可见区始终有亮带在连续流动。
+--   · 接管范围扩大到【所有文本 + 图标】：TextLabel / TextButton 之外，
+--     固定小尺寸的 ImageLabel / ImageButton 也挂流光（背景图/辉光/玻璃高光
+--     按 名称 + Scale 尺寸 + 透明度 过滤掉）。
+--   · 开发者名单（含 [ + <font color="rgb(...)">）不在这里接管，交给 ②。
+--   · 控件填充渐变（按钮/下拉/菜单/滑块）仍用 Offset 正弦往返；
 --     边框 / 玻璃高光 / 标题逐词渐变各有自己的动画，白名单之外一律不碰。
--- 不拆 RichText、不改 TextColor3、不动 Registry、不改布局。
+--   · 不拆 RichText、不改 TextColor3、不动 Registry、不改布局。
 -- ============================================================================
 local YXAllFlow = (function(Library)
     local M = {}
 
     -- 可调配置 -------------------------------------------------------------
     M.Enabled             = true
-    M.TextEnabled         = true    -- 其它文字的亮光扫过
+    M.TextEnabled         = true    -- 所有普通文字流动
+    M.IconEnabled         = true    -- 图标也流动
     M.GradientEnabled     = true    -- 填充渐变一起缓慢流动
-    M.Speed               = 0.42    -- 亮带流动速度（每秒走多少轮）
+    M.Speed               = 0.45    -- Offset 每秒平移量（相对整条色带）
+    M.Peaks               = 4       -- 色带内亮峰个数，图案周期 = 1/Peaks
+    M.BandWidth           = 0.10    -- 亮峰半宽（相对整条色带）
+    M.Interval            = 1 / 30  -- 写 Offset 频率（数值属性很轻，可到 30Hz）
+    M.ScanInterval        = 0.5     -- 新控件 / 动态标签 / 动态图标补扫间隔
+    M.ThemeCheckInterval  = 0.15    -- 主题色签名检查间隔
+    M.PlainSaturation     = 0.62    -- 文字彩底饱和度（0 = 灰度）
+    M.IconEdgeWhite       = 0.45    -- 图标彩底向白靠拢，避免图标被染太重
     M.GradientSpeed       = 0.22    -- 控件渐变往返速度
     M.GradientAmplitude   = 0.45    -- 控件渐变 Offset 摆动幅度
-    M.Interval            = 1 / 18  -- 色带重建 + 属性写入频率（降频）
-    M.ScanInterval        = 0.6     -- 新控件 / 动态标签补扫间隔
-    M.ThemeCheckInterval  = 0.15    -- 主题色签名检查间隔
-    M.BandWidth           = 0.09    -- 亮带半宽（相对整条色带，越小越细）
-    M.Peaks               = 3       -- 同时几条亮带在文字上流动
-    M.Rotation            = 0       -- 色带角度（0 = 水平）
-    M.PlainSaturation     = 0.62    -- 彩色底饱和度（0 = 灰度，即更老一版效果）
-    M.MaxTextGradients    = 600     -- 文字渐变数量上限，防通知刷屏堆积
+    M.MaxOwned            = 800     -- 新建渐变数量上限
+    M.IconMaxSize         = 64      -- 只接管固定尺寸 <= 64px 的图标（更大 = 背景图）
     M.SkipTextBox         = true
     M.SkipNames           = {
-        YXTitleFlow   = true,      -- 标题 / 页脚逐词渐变自己在动
-        YXAllFlowText = true,      -- 本模块新建
-        YXFlowText    = true,      -- 兼容旧独立片段
+        YXTitleFlow   = true,       -- 标题 / 页脚逐词渐变自己在动
+        YXAllFlowText = true,
+        YXAllFlowIcon = true,
+        YXFlowText    = true,       -- 兼容旧独立片段
     }
     M.GradientNames       = {
         YXButtonGradient      = true,
@@ -3248,10 +3259,17 @@ local YXAllFlow = (function(Library)
         YXMenuGradient        = true,
         YXSliderTrackGradient = true,
     }
-    M.Name                = "YXAllFlowText"
+    M.IconSkipNames       = {
+        "glow", "sheen", "background", "shadow", "blur",
+        "mask", "cursor", "wallpaper", "vignette",
+    }
+    M.TextGradName        = "YXAllFlowText"
+    M.IconGradName        = "YXAllFlowIcon"
 
     local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
     local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
+
+    local White = Color3.new(1, 1, 1)
 
     local function Clamp(V, Lo, Hi)
         if V < Lo then return Lo end
@@ -3259,9 +3277,11 @@ local YXAllFlow = (function(Library)
         return V
     end
     local function KP(T, C) return ColorSequenceKeypoint.new(T, C) end
-    local White = Color3.new(1, 1, 1)
+    local function PeakCount()
+        return math.max(1, math.min(6, math.floor(tonumber(M.Peaks) or 4)))
+    end
 
-    -- 主题强调色 -> 饱和化彩色底（保留色相，拉大与纯白的差）
+    -- 主题强调色 -> 饱和化彩色底（保留色相，拉大与纯白亮峰的差）
     local function PlainEdge()
         local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
         local C = (Ok and RGB) or { 130 / 255, 200 / 255, 248 / 255 }
@@ -3273,47 +3293,58 @@ local YXAllFlow = (function(Library)
         return Color3.new(Ch(C[1]), Ch(C[2]), Ch(C[3]))
     end
 
+    local function MixWhite(C, T)
+        return Color3.new(C.R + (1 - C.R) * T,
+                          C.G + (1 - C.G) * T,
+                          C.B + (1 - C.B) * T)
+    end
+
     local function ThemeSignature()
         local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
         local C = (Ok and RGB) or { 130 / 255, 200 / 255, 248 / 255 }
-        return string.format("%.4f,%.4f,%.4f,%.3f", C[1], C[2], C[3], M.PlainSaturation)
+        return string.format("%.4f,%.4f,%.4f,%.3f,%.3f",
+            C[1], C[2], C[3], M.PlainSaturation, M.IconEdgeWhite)
     end
 
-    -- 按相位重建色带：亮峰位置 = (Phase + k) / Peaks，k = 0..Peaks
-    -- Phase 从 0 到 1 时每个峰右移 1/Peaks，图案与 Phase=0 完全一致 => 无缝循环
-    local function BuildMovingSeq(Edge, Phase)
-        local W = Clamp(M.BandWidth, 0.02, 0.20)
-        local P = math.max(1, math.floor(M.Peaks or 3))
-        local Pts = {}
-        for k = 0, P do
-            local p = (Phase + k) / P
-            local a, b = p - W, p + W
-            if a > 0 and a < 1 then Pts[#Pts + 1] = { a, Edge } end
-            if p > 0 and p < 1 then Pts[#Pts + 1] = { p, White } end
-            if b > 0 and b < 1 then Pts[#Pts + 1] = { b, Edge } end
+    -- 周期色带：Peaks 个「Edge -> White -> Edge」，两端同色，关键点严格递增。
+    -- 图案周期 = 1/Peaks；Offset 平移一个周期后图案与起点完全一致 => 无缝循环。
+    local function BuildPeriodSeq(Edge)
+        local P = PeakCount()
+        local W = Clamp(M.BandWidth or 0.10, 0.02, 0.30) / P
+        local Kps = { KP(0, Edge) }
+        for k = 0, P - 1 do
+            local c = (k + 0.5) / P
+            local a, b = c - W, c + W
+            if a > 0.001 then Kps[#Kps + 1] = KP(a, Edge) end
+            Kps[#Kps + 1] = KP(c, White)
+            if b < 0.999 then Kps[#Kps + 1] = KP(b, Edge) end
         end
-        table.sort(Pts, function(X, Y) return X[1] < Y[1] end)
-        local Kps, Last = { KP(0, Edge) }, 0
-        for _, Q in ipairs(Pts) do
-            if Q[1] > Last + 1e-4 and Q[1] < 1 - 1e-4 then
-                Kps[#Kps + 1] = KP(Q[1], Q[2])
-                Last = Q[1]
-            end
-        end
-        Kps[#Kps + 1] = KP(1, Edge)   -- 两端同色，边界不跳色
+        Kps[#Kps + 1] = KP(1, Edge)
         return ColorSequence.new(Kps)
     end
 
-    local Items = setmetatable({}, { __mode = "k" })  -- [UIGradient] = {OX,OY,Kind}
-    local Seen  = setmetatable({}, { __mode = "k" })
-    local Owned = setmetatable({}, { __mode = "k" })
+    local SeqText, SeqIcon, SeqSig = nil, nil, nil
+    local Items  = setmetatable({}, { __mode = "k" })  -- [UIGradient] = {OX,OY,Kind}
+    local Seen   = setmetatable({}, { __mode = "k" })
+    local Owned  = setmetatable({}, { __mode = "k" })
     local OwnedCount = 0
 
-    local Edge, EdgeSig, PhaseT = nil, nil, 0
-
-    local function RefreshEdge(Force)
+    -- 色带只在「启用 / 切主题 / 改配置」时重建，不是每帧
+    local function RefreshSequences(Force)
         local Sig = ThemeSignature()
-        if Force or Sig ~= EdgeSig then EdgeSig = Sig; Edge = PlainEdge() end
+        if not Force and Sig == SeqSig then return false end
+        SeqSig = Sig
+        local E = PlainEdge()
+        SeqText = BuildPeriodSeq(E)
+        SeqIcon = BuildPeriodSeq(MixWhite(E, Clamp(M.IconEdgeWhite, 0, 1)))
+        for Grad, Info in pairs(Items) do
+            if Info.Kind == "text" then
+                pcall(function() Grad.Color = SeqText end)
+            elseif Info.Kind == "icon" then
+                pcall(function() Grad.Color = SeqIcon end)
+            end
+        end
+        return true
     end
 
     local function GetRoot()
@@ -3355,10 +3386,35 @@ local YXAllFlow = (function(Library)
     local function IsText(O)
         return O:IsA("TextLabel") or O:IsA("TextButton") or O:IsA("TextBox")
     end
+    local function IsIcon(O)
+        return O:IsA("ImageLabel") or O:IsA("ImageButton")
+    end
 
-    -- 开发者名单这类逐字染色的 RichText 交给 ②，这里不挂 UIGradient
+    -- 只接管固定小尺寸图标；背景图 / 辉光 / 玻璃高光 / 遮罩一律跳过
+    local function IconOK(O)
+        local Ok, Good = pcall(function()
+            local Low = string.lower(tostring(O.Name or ""))
+            for _, kw in ipairs(M.IconSkipNames) do
+                if Low:find(kw, 1, true) then return false end
+            end
+            if type(O.ImageTransparency) == "number" and O.ImageTransparency >= 0.99 then
+                return false
+            end
+            local S = O.Size
+            if not (S and S.X and S.Y) then return false end
+            local xs, xo = S.X.Scale or 0, S.X.Offset or 0
+            local ys, yo = S.Y.Scale or 0, S.Y.Offset or 0
+            if xs > 0.01 or ys > 0.01 then return false end  -- 拉伸型 = 背景
+            return xo > 0 and yo > 0 and xo <= M.IconMaxSize and yo <= M.IconMaxSize
+        end)
+        return (Ok and Good == true) or false
+    end
+
+    -- 开发者名单特征：方括号 + <font color="rgb(...)">  -> 交给 ② YXCharFlow
     local function IsCharFlowTarget(T)
-        return T:find("<font", 1, true) ~= nil and T:find("rgb(", 1, true) ~= nil
+        return T:find("[", 1, true) ~= nil
+           and T:find("<font", 1, true) ~= nil
+           and T:find("rgb(", 1, true) ~= nil
     end
 
     local function Process(O)
@@ -3368,28 +3424,40 @@ local YXAllFlow = (function(Library)
             if M.SkipTextBox and O:IsA("TextBox") then Seen[O] = true; return end
             local T, TT = nil, 0
             pcall(function() T = O.Text; TT = O.TextTransparency end)
-            if type(T) ~= "string" or T == "" then return end
+            if type(T) ~= "string" or T == "" then return end  -- 库后赋文字，留待补扫
             if type(TT) == "number" and TT >= 0.99 then Seen[O] = true; return end
             if IsCharFlowTarget(T) then Seen[O] = true; return end
-
             local Grad = ChildGradient(O)
             if Grad then
-                if M.SkipNames[Grad.Name] then Seen[O] = true; return end
-                if M.GradientNames[Grad.Name] and M.GradientEnabled then
-                    Register(Grad, "grad", false)
-                end
+                -- 已有任意渐变的文字（标题逐词 / 自定义）都不动，避免误碰
                 Seen[O] = true
                 return
             end
             if not M.TextEnabled then return end
-            if OwnedCount >= M.MaxTextGradients then Seen[O] = true; return end
+            if OwnedCount >= M.MaxOwned then Seen[O] = true; return end
             local G = Instance.new("UIGradient")
-            G.Name     = M.Name
-            G.Rotation = M.Rotation
-            G.Color    = BuildMovingSeq(Edge, PhaseT)
-            G.Offset   = Vector2.new(0, 0)   -- 固定，流动靠重建色带
+            G.Name     = M.TextGradName
+            G.Rotation = 0
+            G.Color    = SeqText
+            G.Offset   = Vector2.new(0, 0)
             G.Parent   = O
             Register(G, "text", true)
+            Seen[O] = true
+            return
+        end
+
+        if IsIcon(O) then
+            if not M.IconEnabled then Seen[O] = true; return end
+            if not IconOK(O) then Seen[O] = true; return end
+            if ChildGradient(O) then Seen[O] = true; return end
+            if OwnedCount >= M.MaxOwned then Seen[O] = true; return end
+            local G = Instance.new("UIGradient")
+            G.Name     = M.IconGradName
+            G.Rotation = 0
+            G.Color    = SeqIcon
+            G.Offset   = Vector2.new(0, 0)
+            G.Parent   = O
+            Register(G, "icon", true)
             Seen[O] = true
             return
         end
@@ -3412,41 +3480,45 @@ local YXAllFlow = (function(Library)
         end)
     end
 
-    local PhaseG = 0
+    local Phase, PhaseG = 0, 0
+    local Cycle = 1 / PeakCount()
     local WriteAcc, ScanAcc, ThemeAcc, Last = 0, 0, 0, os.clock()
     local Conn, AddedConn
 
     local function Tick(Dt)
         if not M.Enabled then return end
         local Now  = os.clock()
-        local Step = (type(Dt) == "number" and Dt > 0 and Dt) or (Now - Last)
-        if Step < 0 then Step = 0 end
-        if Step > 0.1 then Step = 0.1 end
+        local Raw  = (type(Dt) == "number" and Dt > 0 and Dt) or (Now - Last)
+        if Raw < 0 then Raw = 0 end
+        local Step = Raw > 0.1 and 0.1 or Raw   -- 相位防跳帧
         Last = Now
 
-        PhaseT = (PhaseT + Step * M.Speed) % 1
+        Phase  = (Phase  + Step * M.Speed) % Cycle
         PhaseG = (PhaseG + Step * M.GradientSpeed) % 1
-        WriteAcc, ScanAcc, ThemeAcc = WriteAcc + Step, ScanAcc + Step, ThemeAcc + Step
+        -- 补扫 / 主题检查用真实时间，卡顿后也能及时触发
+        WriteAcc, ScanAcc, ThemeAcc = WriteAcc + Raw, ScanAcc + Raw, ThemeAcc + Raw
 
         if ScanAcc >= M.ScanInterval then ScanAcc = 0; Scan() end
-        if ThemeAcc >= M.ThemeCheckInterval then ThemeAcc = 0; RefreshEdge(false) end
+        if ThemeAcc >= M.ThemeCheckInterval then ThemeAcc = 0; RefreshSequences(false) end
         if WriteAcc < M.Interval then return end
         WriteAcc = 0
 
-        local Seq = BuildMovingSeq(Edge, PhaseT)
+        local Shift  = -Phase                                    -- 文字 / 图标：单向平移
         local ShiftG = math.sin(PhaseG * 2 * math.pi) * M.GradientAmplitude
         for Grad, Info in pairs(Items) do
-            if Info.Kind == "text" and M.TextEnabled then
-                pcall(function() Grad.Color = Seq end)
-            elseif Info.Kind == "grad" and M.GradientEnabled then
-                pcall(function() Grad.Offset = Vector2.new(Info.OX + ShiftG, Info.OY) end)
+            local On = (Info.Kind == "text" and M.TextEnabled)
+                    or (Info.Kind == "icon" and M.IconEnabled)
+                    or (Info.Kind == "grad" and M.GradientEnabled)
+            if On then
+                local S = (Info.Kind == "grad") and ShiftG or Shift
+                pcall(function() Grad.Offset = Vector2.new(Info.OX + S, Info.OY) end)
             end
         end
     end
 
     function M:Enable()
         M.Enabled = true
-        RefreshEdge(true)
+        RefreshSequences(true)
         Scan()
         if not Heartbeat or Conn then return self end
         Last = os.clock()
@@ -3471,15 +3543,20 @@ local YXAllFlow = (function(Library)
             pcall(function() Grad.Offset = Vector2.new(Info.OX, Info.OY) end)
         end
         for Grad in pairs(Owned) do pcall(function() Grad:Destroy() end) end
-        Items = setmetatable({}, { __mode = "k" })
-        Seen  = setmetatable({}, { __mode = "k" })
-        Owned = setmetatable({}, { __mode = "k" })
+        Items  = setmetatable({}, { __mode = "k" })
+        Seen   = setmetatable({}, { __mode = "k" })
+        Owned  = setmetatable({}, { __mode = "k" })
         OwnedCount = 0
         return self
     end
 
     function M:SetSaturation(V)
-        if type(V) == "number" then M.PlainSaturation = V; RefreshEdge(true) end
+        if type(V) == "number" then M.PlainSaturation = V; RefreshSequences(true) end
+        return self
+    end
+
+    function M:SetSpeed(V)
+        if type(V) == "number" and V > 0 then M.Speed = V end
         return self
     end
 
@@ -3490,38 +3567,40 @@ YXAllFlow:Enable()
 
 
 -- ============================================================================
--- ② 开发者名单「逐字母单独染色 + 滚动流动」
+-- ② 开发者名单「只让方括号内名字逐字滚动 + 明暗中和」
 --
--- 把 [<font color="rgb(0,255,255)">YirdeX</font>] 主创开发者 这类 RichText
---   解析成「可见字符 + 每字符原本的颜色」，再重建为你要的形式：
---     <font color="rgb(0, 255, 255)">Y</font><font color="rgb(0, 200, 210)">i</font>...
---   每个字母 / 符号 / 汉字都是独立的 <font color> 标签。
--- 流动：每字符颜色 = 原色在「暗版 <-> 亮版」之间按正弦取值，取样的位置
---   = (字符序号 / 总数 * Cycles - Phase)，Phase 随时间推进，亮带就沿字符
---   从左往右滚动。青还是青、紫还是紫、黄还是黄 —— 按当前染上的颜色流动，
---   不会被统一刷成一种色。
--- 只接管界面里原本就含 <font color="rgb(...)"> 的那几行（即开发者名单），
---   其它文字由 ① 负责。原文会保存，Stop 可完整还原。
+-- 改动（相对上一版逐字流动）：
+--   · 上一版把【整行】(含 [ ]、中文描述、空格) 都拆成逐字 <font> 一起滚动，
+--     这次按可见字符里的 [ ... ] 划界：只有【括号内】的名字逐字滚动，
+--     括号外的描述文字保持原本的白色静态，不再被拆、不再闪。
+--   · 上一版 DarkAmount=0.42 / BrightWhite=0.72 -> 一暗一白，某些字母几乎
+--     看不见。这次「中和」：暗端只降到原色的 0.82，亮端只向白靠 0.18，
+--     色相完全不变（青还是青、紫还是紫、黄还是黄），只是柔和地明暗流动。
+--   · 想让括号外描述也轻微流动：把 M.FlowOutside 改成 true 即可。
+--   · 只接管界面里「含 [ + <font color=rgb(...)」的那几行，其它文字由 ① 负责。
+--     原文会保存，Stop 可完整还原。
 -- ============================================================================
 local YXCharFlow = (function(Library)
     local M = {}
 
-    M.Enabled       = true
-    M.Speed         = 0.35    -- 颜色沿字符滚动速度（每秒多少轮）
-    M.Interval      = 1 / 12  -- 文本重建频率（重写 RichText 较重，别太高）
-    M.ScanInterval  = 0.8     -- 新标签补扫间隔
-    M.Cycles        = 1.6     -- 一行里同时有几条亮带（越大越密）
-    M.DarkAmount    = 0.42    -- 暗版 = 原色 * 该系数
-    M.BrightWhite   = 0.72    -- 亮版向白靠拢比例
-    M.KeepBold      = true    -- 外层保留 <b> 加粗
-    M.KeepStroke    = false   -- 外层补回原 <stroke> 黑描边（默认关 = 纯 <font> 格式）
-    M.MaxTargets    = 40      -- 最多接管多少行
-    M.Name          = "YXCharFlow"
+    M.Enabled          = true
+    M.Speed            = 0.35    -- 颜色沿字符滚动速度（每秒多少轮）
+    M.Interval         = 1 / 12  -- 文本重建频率（重写 RichText 较重，别太高）
+    M.ScanInterval     = 0.8     -- 新标签补扫间隔
+    M.Cycles           = 1.6     -- 一行里同时几条亮带
+    M.DarkAmount       = 0.82    -- 暗端 = 原色 * 0.82（中和：不再发黑）
+    M.BrightWhite      = 0.18    -- 亮端 = 原色向白靠 0.18（中和：不再惨白）
+    M.FlowOutside      = false   -- 括号外描述是否也轻微流动（默认只滚括号内）
+    M.OutsideAmplitude = 0.5     -- FlowOutside 打开时的波动幅度（比括号内更柔）
+    M.KeepBold         = true    -- 外层保留 <b> 加粗
+    M.KeepStroke       = false   -- 外层补回原 <stroke> 黑描边（默认关）
+    M.MaxTargets       = 40
+    M.Name             = "YXCharFlow"
 
     local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
     local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
 
-    local Targets = setmetatable({}, { __mode = "k" })  -- [Label] = {Chars, Orig, OrigRich}
+    local Targets = setmetatable({}, { __mode = "k" })  -- [Label] = {Chars, Orig, OrigRich, Stroke}
     local Seen    = setmetatable({}, { __mode = "k" })
     local Count   = 0
 
@@ -3538,19 +3617,20 @@ local YXCharFlow = (function(Library)
         return Ch
     end
 
-    -- 解析 RichText：返回 { {Ch=字符, R/G/B = 0..255}, ... }
-    -- 只认 <font color="rgb(r,g,b)"> 与 </font>，其余标签（<b>/<stroke>）跳过
+    -- 解析 RichText -> { {Ch, R,G,B, InBracket}, ... }
+    -- 只认 <font color="rgb(r,g,b)"> 与 </font>；<b>/<stroke> 等标签跳过。
+    -- InBracket：可见字符 [ 之后、] 之前（不含方括号本身）。
     local function ParseRich(Text)
         local Out, Stack = {}, { { 255, 255, 255 } }
-        local Stroke = nil
+        local Stroke, Depth = nil, 0
         local i, n = 1, #Text
         while i <= n do
             local b = Text:byte(i)
             if b == 60 then  -- '<'
                 local j = Text:find(">", i + 1, true)
                 if j then
-                    local Tag  = Text:sub(i, j)
-                    local Low  = Tag:lower()
+                    local Tag = Text:sub(i, j)
+                    local Low = Tag:lower()
                     if not Stroke and Low:find("<stroke", 1, true)
                        and not Low:find("</", 1, true) then
                         Stroke = Tag
@@ -3568,7 +3648,7 @@ local YXCharFlow = (function(Library)
                     i = j + 1
                 else
                     local C = Stack[#Stack]
-                    Out[#Out + 1] = { Ch = "<", R = C[1], G = C[2], B = C[3] }
+                    Out[#Out + 1] = { Ch = "<", R = C[1], G = C[2], B = C[3], InBracket = Depth > 0 }
                     i = i + 1
                 end
             else
@@ -3577,28 +3657,52 @@ local YXCharFlow = (function(Library)
                 elseif b >= 0xE0 then L = 3
                 elseif b >= 0xC0 then L = 2 end
                 if i + L - 1 > n then L = 1 end
+                local Ch = Text:sub(i, i + L - 1)
                 local C = Stack[#Stack]
-                Out[#Out + 1] = { Ch = Text:sub(i, i + L - 1), R = C[1], G = C[2], B = C[3] }
+                local InB = Depth > 0
+                if Ch == "[" then
+                    Depth = 1
+                    Out[#Out + 1] = { Ch = Ch, R = C[1], G = C[2], B = C[3], InBracket = false }
+                elseif Ch == "]" then
+                    Depth = 0
+                    Out[#Out + 1] = { Ch = Ch, R = C[1], G = C[2], B = C[3], InBracket = false }
+                else
+                    Out[#Out + 1] = { Ch = Ch, R = C[1], G = C[2], B = C[3], InBracket = InB }
+                end
                 i = i + L
             end
         end
         return Out, Stroke
     end
 
+    -- 中和后的柔和明暗：暗端 = 原色*DarkAmount，亮端 = 原色向白靠 BrightWhite
+    local function Shade(It, Wave, Amp)
+        local W = 0.5 + (Wave - 0.5) * Amp
+        local r, g, b = It.R, It.G, It.B
+        local D, BW = M.DarkAmount, M.BrightWhite
+        local dr, dg, db = r * D, g * D, b * D
+        local br, bg, bb = r + (255 - r) * BW, g + (255 - g) * BW, b + (255 - b) * BW
+        local cr = math.floor(Clamp(dr + (br - dr) * W, 0, 255) + 0.5)
+        local cg = math.floor(Clamp(dg + (bg - dg) * W, 0, 255) + 0.5)
+        local cb = math.floor(Clamp(db + (bb - db) * W, 0, 255) + 0.5)
+        return cr, cg, cb
+    end
+
     local function BuildText(Chars, Phase, Stroke)
         local N = #Chars
         if N == 0 then return "" end
-        local Dark, BW = M.DarkAmount, M.BrightWhite
         local Out = {}
         for I, It in ipairs(Chars) do
             local T = (I - 1) / math.max(1, N - 1)
             local Wave = 0.5 + 0.5 * math.sin(2 * math.pi * (T * M.Cycles - Phase))
-            local r, g, b = It.R, It.G, It.B
-            local dr, dg, db = r * Dark, g * Dark, b * Dark
-            local br, bg, bb = r + (255 - r) * BW, g + (255 - g) * BW, b + (255 - b) * BW
-            local cr = math.floor(Clamp(dr + (br - dr) * Wave, 0, 255) + 0.5)
-            local cg = math.floor(Clamp(dg + (bg - dg) * Wave, 0, 255) + 0.5)
-            local cb = math.floor(Clamp(db + (bb - db) * Wave, 0, 255) + 0.5)
+            local cr, cg, cb
+            if It.InBracket then
+                cr, cg, cb = Shade(It, Wave, 1.0)
+            elseif M.FlowOutside then
+                cr, cg, cb = Shade(It, Wave, M.OutsideAmplitude)
+            else
+                cr, cg, cb = It.R, It.G, It.B       -- 括号外：静态原色
+            end
             Out[#Out + 1] = ('<font color="rgb(%d, %d, %d)">%s</font>')
                 :format(cr, cg, cb, Escape(It.Ch))
         end
@@ -3612,8 +3716,10 @@ local YXCharFlow = (function(Library)
         if not (O:IsA("TextLabel") or O:IsA("TextButton")) then return false end
         local T = nil
         pcall(function() T = O.Text end)
-        return type(T) == "string" and T:find("<font", 1, true) ~= nil
-               and T:find("rgb(", 1, true) ~= nil
+        return type(T) == "string"
+           and T:find("[", 1, true) ~= nil
+           and T:find("<font", 1, true) ~= nil
+           and T:find("rgb(", 1, true) ~= nil
     end
 
     local function Attach(O)
@@ -3623,6 +3729,12 @@ local YXCharFlow = (function(Library)
         if type(T) ~= "string" or T == "" then return end
         local Chars, Stroke = ParseRich(T)
         if #Chars < 2 then return end
+        -- 没找到方括号就不接管，避免误伤其它 <font> 文本
+        local HasBracket = false
+        for _, It in ipairs(Chars) do
+            if It.Ch == "[" then HasBracket = true; break end
+        end
+        if not HasBracket then return end
         Targets[O] = { Chars = Chars, Orig = T, OrigRich = Rich, Stroke = Stroke }
         pcall(function() O.RichText = true end)
         pcall(function() O.Text = BuildText(Chars, 0, Stroke) end)
@@ -3668,12 +3780,12 @@ local YXCharFlow = (function(Library)
     local function Tick(Dt)
         if not M.Enabled then return end
         local Now  = os.clock()
-        local Step = (type(Dt) == "number" and Dt > 0 and Dt) or (Now - Last)
-        if Step < 0 then Step = 0 end
-        if Step > 0.1 then Step = 0.1 end
+        local Raw  = (type(Dt) == "number" and Dt > 0 and Dt) or (Now - Last)
+        if Raw < 0 then Raw = 0 end
+        local Step = Raw > 0.1 and 0.1 or Raw
         Last = Now
         Phase = (Phase + Step * M.Speed) % 1
-        WriteAcc, ScanAcc = WriteAcc + Step, ScanAcc + Step
+        WriteAcc, ScanAcc = WriteAcc + Raw, ScanAcc + Raw
         if ScanAcc >= M.ScanInterval then ScanAcc = 0; Scan() end
         if WriteAcc < M.Interval then return end
         WriteAcc = 0
