@@ -39,10 +39,8 @@ local DefaultThemeBackground = {
     Images = {
         "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
     },
-
     -- 只保留「背景 1」，启动即用它（已删除背景 2 / 背景 3 及其切换逻辑）
     StartupImageIndex = 1,
-
     -- 主题切换触发
     TriggerNames = { "Default" },  -- 视为「默认主题」的主题名
     MatchAssignedDefault = true,   -- 同时匹配被「设为默认」的主题名
@@ -1652,6 +1650,13 @@ Bg:Enable()
 
 SaveManager:LoadAutoloadConfig()
 
+Library:Notify({
+    Title = "YX-XXX",
+    Description = "YX-XXX已加载成功",
+    Icon = "check",
+    Time = 4,
+})
+
 --    YXGradientBorder:Enable()          -- 窗口 + 标签页一起开（默认）
 --    YXGradientBorder:Disable()         -- 全部关闭
 --    YXGradientBorder:EnableTabs()      -- 只开标签页边框
@@ -1742,7 +1747,7 @@ local YXGradientBorder = (function(Library)
     --   这是辉光贴图，不是背景图：不铺内容、不遮控件、不挡点击。
     M.Glow = {
         Enabled      = true,
-        Offset       = 30,    -- 向外扩展像素（库默认 20，按真机反馈收窄一半）
+        Offset       = 10,    -- 向外扩展像素（库默认 20，按真机反馈收窄一半）
         Image        = "rbxassetid://88645182616510",  -- 库 assets/Glow.png 的 RobloxId
         Transparency = 0,     -- 贴图透明度（库窗口版默认 0；调大更淡）
         FollowAccent = true,  -- 跟随 Scheme.AccentColor；关掉则固定为创建时的颜色
