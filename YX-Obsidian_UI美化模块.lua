@@ -2882,7 +2882,9 @@ local YXLibTextFlow = (function(Library)
     M.IncludeTabTooltip  = true    -- ④ 标签页 Tooltip（悬停浮层）
     M.OnlyTabTooltips    = true    -- Tooltip 浮层为全局单例：只在显示「标签页提示」
                                     -- 时流光，其它控件提示保持主题色（原色自动恢复）
-    M.ScanInterval       = 0.5     -- 动态补扫间隔（切换标签 / 通知 / 对话框）
+    M.ScanInterval       = 1.0     -- 动态补扫间隔（切换标签 / 通知 / 对话框）。
+                                    --   已靠 DescendantAdded 实时捕获新增元素，整树扫描
+                                    --   无需太频繁；从 0.5s 提到 1.0s，降低大 UI 下的周期卡顿。
     M.ThemeInterval      = 0.3     -- 主题强调色重取间隔
     M.TakeOverExisting   = true    -- 复用对象上已有的 UIGradient；一个 GuiObject 挂
                                     -- 两条会互相打架，复用同一条才能真流动
@@ -2910,6 +2912,13 @@ local YXLibTextFlow = (function(Library)
 
     -- ---------------------- 内部状态 ----------------------
     local FALLBACK_ACCENT = Color3.fromRGB(130, 200, 248)
+    -- 白基底（UIGradient 相乘时白 = 恒等元）：全局复用，避免每帧新建
+    local WHITE = Color3.new(1, 1, 1)
+
+    -- 脏标记：记录每个渐变上一次实际写出的 Rotation / Transparency，
+    --   值没变就跳过 Roblox 属性写（每帧省掉对全部目标的大量实例写入）。
+    local AppliedRot    = setmetatable({}, { __mode = "k" })
+    local AppliedTrans  = setmetatable({}, { __mode = "k" })
 
     local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
     local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
@@ -2928,6 +2937,9 @@ local YXLibTextFlow = (function(Library)
     local GLASS_TRANS, CLEAR_TRANS = nil, nil
 
     local Acc, ScanAcc, ThemeAcc = 0, 0, 0
+    -- 颜色序列按相位量化缓存，避免每帧 ~5 次表分配造成的 GC 压力
+    local LastSeq, LastSeqShift = nil, nil
+    local SEQ_STEP = 0.01
     local Conn, Started, FirstFrame = nil, false, true
 
     local function SafeGet(Object, Key)
@@ -3215,6 +3227,23 @@ local YXLibTextFlow = (function(Library)
         if not Ok or not Grad then return end
 
         Targets[Object] = Grad
+
+        local Tx = IsTextObject(Object) and SafeGet(Object, "Text") or nil
+        local HasFont = (Tx ~= nil and string.find(Tx, "<font", 1, true) ~= nil) or false
+        FontTag[Object] = HasFont
+
+        -- 白基底：挂上时一次性铺白（库每帧刷白的目的只是对抗主题色回流）。
+        --   不再每帧刷白（见下方 Tick）：改为挂上时铺一次 + 主题切换时由
+        --   AssertWhiteBase 补刷，省掉每帧对全部目标写 TextColor3/ImageColor3
+        --   的巨额开销（这是本模块最重的每帧写入）。含内联 <font color> 的
+        --   富文本保留原色，跳过。
+        if M.WhiteBase and not (M.KeepRichTextColor and HasFont) then
+            pcall(function()
+                if IsImageObject(Object) then Object.ImageColor3 = WHITE
+                else Object.TextColor3 = WHITE end
+            end)
+        end
+
         -- 记录图标目标：Tick 里要走「液态玻璃高光」分支，卸载时恢复原始颜色
         if IsImageObject(Object) or (M.IncludeFontIcons and IsFontIcon(Object)) then
             IconSet[Object] = true
@@ -3223,11 +3252,30 @@ local YXLibTextFlow = (function(Library)
                     and SafeGet(Object, "ImageColor3") or SafeGet(Object, "TextColor3")
             end
         end
-        local Tx = IsTextObject(Object) and SafeGet(Object, "Text") or nil
-        FontTag[Object] = (Tx ~= nil and string.find(Tx, "<font", 1, true) ~= nil) or false
         -- 记下 Tooltip 浮层原本的文字色，显示非标签页提示时恢复
         if IsTooltipLabel(Object) and OrigColor[Object] == nil then
             OrigColor[Object] = SafeGet(Object, "TextColor3")
+        end
+    end
+
+    -- 主题切换 / 库 UpdateColorsUsingRegistry 会把流光目标的颜色刷回主题色，
+    --   这里只在「已经偏离白色」时才写回白（带 ~= 判断），平时零写入。
+    --   挂在 Scan（补扫）与 BuildPalette（主题重取）里周期性调用即可，
+    --   替代原本每帧对全部目标强刷白基底的昂贵写法。
+    local function AssertWhiteBase()
+        if not M.WhiteBase then return end
+        for Object in pairs(Targets) do
+            pcall(function()
+                -- Tooltip 浮层由 Tick 每帧管理（显示标签页提示才刷白），这里跳过，
+                --   否则会把「其它控件的提示」也误刷成白，破坏原色恢复逻辑。
+                if IsTooltipLabel(Object) then return end
+                if M.KeepRichTextColor and FontTag[Object] then return end
+                if IsImageObject(Object) then
+                    if Object.ImageColor3 ~= WHITE then Object.ImageColor3 = WHITE end
+                else
+                    if Object.TextColor3 ~= WHITE then Object.TextColor3 = WHITE end
+                end
+            end)
         end
     end
 
@@ -3279,7 +3327,7 @@ local YXLibTextFlow = (function(Library)
     end
 
     -- ---------------------- 每帧驱动（库同款：每帧重建 ColorSequence） ----------------------
-    local WHITE = Color3.new(1, 1, 1)
+    -- WHITE 已在模块顶部统一定义（白基底恒等元），此处不再重复声明
 
     local function Tick(dt)
         if Library.Unloaded or not M.Enabled then return end
@@ -3296,14 +3344,20 @@ local YXLibTextFlow = (function(Library)
         end
 
         Acc = Acc + dt
-        -- 首帧强制执行（不等降频间隔），否则白基底要等 1/30 秒才铺上，会闪一下原色
+        -- 首帧强制执行（不等降频间隔），首帧立刻铺上流光，不闪
         if not FirstFrame and M.Interval > 0 and Acc < M.Interval then return end
         FirstFrame = false
         Acc = 0
 
         -- ★ 库的核心：每帧重新构造整个 ColorSequence，颜色本身在流动
         local Clock = os.clock()
-        local Seq = MakeGradient(Clock * M.Speed)
+        local Shift = Clock * M.Speed
+        -- 相位没推进够就不重建，省掉每帧 ~5 次表分配（肉眼无差，GC 压力大降）
+        if (LastSeqShift == nil) or (math.abs(Shift - LastSeqShift) >= SEQ_STEP) then
+            LastSeq = MakeGradient(Shift)
+            LastSeqShift = Shift
+        end
+        local Seq = LastSeq
         local Off = Vector2.new((Clock * M.OffsetSpeed) % 2 - 1, 0)
         local Rot = (M.Sway ~= 0) and (math.sin(Clock * M.SwaySpeed) * M.Sway) or 0
 
@@ -3317,45 +3371,59 @@ local YXLibTextFlow = (function(Library)
                     if M.OnlyTabTooltips and IsTooltipLabel(Object) then
                         local Tx = SafeGet(Object, "Text")
                         if not (type(Tx) == "string" and TabTooltipText[Tx]) then
-                            Grad.Enabled = false
+                            if Grad.Enabled then Grad.Enabled = false end
                             if OrigColor[Object] ~= nil then
                                 Object.TextColor3 = OrigColor[Object]
                             end
                             return
                         end
                     end
+                    -- Tooltip 浮层显示「标签页提示」时需白基底才能正确流光；
+                    --   它全局只有一个实例，每帧写一次白基底开销可忽略
+                    --   （与「全部目标」每帧强刷白基底有本质区别）。
+                    if IsTooltipLabel(Object) then
+                        pcall(function() Object.TextColor3 = WHITE end)
+                    end
                     -- ② 旧模块的 SyncDynamicGradients 每帧可能把复用的渐变
-                    --    Enabled 关掉 / 改 Color / 改 Rotation，这里每帧最后写回，
-                    --    保证流光始终盖住它（本模块的连接在文件末尾，最后执行）。
-                    Grad.Enabled = true
+                    --    Enabled 关掉，这里每帧最后写回 true，保证流光盖住它；
+                    --    只在它被改掉时才写，避免无谓的属性写。
+                    if not Grad.Enabled then Grad.Enabled = true end
+
+                    -- ③ 旋转 / 透明度：用脏标记（AppliedRot / AppliedTrans），
+                    --    值没变就跳过 Roblox 属性写。非玻璃目标这两项本就是常数，
+                    --    每目标只写一次；玻璃目标的透明度也是常数，只有旋转随摆动变。
+                    local nRot, nTrans
                     if IconSet[Object] and M.IconGlass and GLASS_TRANS then
                         -- 图标级液态玻璃：库 AddGlassSheen 的 112° 斜向高光带，
                         -- 与每帧重建的流光 ColorSequence 叠在同一条 UIGradient 上
                         -- （一个 GuiObject 只留一条渐变，绝不互抢）
-                        Grad.Rotation = (M.GlassRotation or 112)
-                            + math.sin(Clock * M.SwaySpeed) * (M.GlassSway or 0)
-                        Grad.Transparency = GLASS_TRANS
+                        nRot   = (M.GlassRotation or 112)
+                                 + math.sin(Clock * M.SwaySpeed) * (M.GlassSway or 0)
+                        nTrans = GLASS_TRANS
                     else
-                        Grad.Rotation = Rot
-                        -- 关掉玻璃 / 目标是文字时复位透明度，避免高光带残留
-                        if CLEAR_TRANS then Grad.Transparency = CLEAR_TRANS end
+                        nRot   = Rot
+                        nTrans = CLEAR_TRANS   -- 关玻璃 / 目标是文字时复位（可能为 nil）
                     end
+                    if AppliedRot[Grad] ~= nRot then
+                        Grad.Rotation = nRot; AppliedRot[Grad] = nRot
+                    end
+                    if nTrans and AppliedTrans[Grad] ~= nTrans then
+                        Grad.Transparency = nTrans; AppliedTrans[Grad] = nTrans
+                    end
+
+                    -- ④ 颜色流光 + 横向平移：每帧必写（这是流动效果本身）
                     Grad.Color  = Seq
                     Grad.Offset = Off
-                    -- ③ 白基底：UIGradient 与像素相乘，白是恒等元；
-                    --    库每帧也强制刷白，用来对抗 UpdateColorsUsingRegistry 刷回主题色。
-                    --    文本刷 TextColor3；图片图标刷 ImageColor3。
-                    --    只有命中的目标会走到这里，其它文字 / 图标颜色完全不动。
-                    if M.WhiteBase and not (M.KeepRichTextColor and FontTag[Object]) then
-                        if IsImageObject(Object) then
-                            Object.ImageColor3 = WHITE
-                        else
-                            Object.TextColor3 = WHITE
-                        end
-                    end
+                    -- ⑤ 白基底已移到「挂上时(Attach)」由下方 AssertWhiteBase 每帧
+                    --    复核：只「读 + 偏离才写」，平时零写入，省掉原每帧对全部
+                    --    目标强刷 TextColor3 / ImageColor3 的巨额开销（原性能瓶颈）。
                 end)
             end
         end
+
+        -- 白基底复核：每帧只读取各目标颜色，仅在被主题色回流时写回白。
+        --   Tooltip 浮层由上面分支管理，这里跳过（避免误刷其它控件提示）。
+        AssertWhiteBase()
     end
 
     -- ---------------------- 开关 ----------------------
