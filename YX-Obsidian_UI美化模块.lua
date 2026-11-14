@@ -1,33 +1,6 @@
 --[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块 可以二改 ，请不要当卑鄙的盗用者或者倒卖者]]
 
 
--- ============================================================================
--- YX · UI 美化模块   ——   所有标签页四要素「渐变流光」（库原生原理版）
--- ----------------------------------------------------------------------------
--- 【本版改动】流光范围 = 所有标签页的 4 个属性，外加窗口 Title / Footer：
---     ① Name        侧边栏每个标签按钮的名称文字 + 内容区顶部当前标签名
---     ② Description 内容区顶部当前标签描述
---     ③ Icon        侧边栏每个标签按钮的图标（图片 / 字体图标都支持）
---     ④ Tooltip     悬停标签按钮时出现的提示浮层（全局单例，只对标签页提示生效）
---   不再写死「主页」等具体文本：每次补扫都从库的数据结构动态收集——
---     Library.Tabs      （字典）→ 每个标签页的 Name / Description / Tooltip
---     Library.TabButtons（数组）→ 每个标签按钮的 .Label 名称文字 + .Icon 图标
---   所以【所有标签页】自动覆盖，新增 / 改名标签页无需改配置。
---   其余所有文字（开发者名单、分组标题、设置项、通知、下拉…）与未登记图标，
---   一律【不挂 UIGradient、不刷白基底】，完全交给库的主题色 Registry 管理。
---
--- 【流光算法】1:1 采用 SyndromeXph/Obsidian 新版库 Library.lua 那段：
---   319-336     MakeVioletBlackGradient：4 关键点 sin + Lerp
---   11022-11056 标题：每帧 RenderStepped 重建 ColorSequence + 强制白字基底
---   11234-11248 页脚：每帧重建 + Offset 横向平移 + Rotation 摆动
---   核心是【每帧重新构造整个 ColorSequence】，不是只建一次色带平移 Offset。
---
--- 【配色 / 速度】沿用上一版的「明亮 + 加速」参数；想完全回到库原版紫黑 + 原速：
---   M.UseLibraryPalette = true，M.Speed = 0.28，M.OffsetSpeed = 0.28。
---
--- 【用法】主脚本 BEAUTIFY_URL 指向本文件即可，主脚本无需改动。
---   加载器签名固定：Loader(Library, ThemeManager, SaveManager)
--- ============================================================================
 local Library, ThemeManager, SaveManager = ...
 
 if not Library then
@@ -2755,6 +2728,24 @@ local YXLibTextFlow = (function(Library)
                                     -- 文本刷 TextColor3，图片图标刷 ImageColor3
     M.KeepRichTextColor  = true    -- 含 <font color=...> 的文字保留内联色
 
+    -- ===== 本版新增：所有 Icon 的「液态玻璃 + 流光」=====
+    M.IncludeAllIcons    = true    -- 所有图标都流光（不再只限标签按钮 Icon）
+    M.IncludeFontIcons   = true    -- 连 lucide 字体图标（带 IconPadding）也一起
+    M.IconGlass          = true    -- 图标叠加液态玻璃 112° 斜向高光带
+    M.GlassRotation      = 112     -- 库 AddGlassSheen 原版角度
+    M.GlassSway          = 6       -- 高光带轻微摆动（度），0 = 固定
+    M.GlassMinTrans      = 0.00    -- 高光带两端透明度（0 = 完全清晰）
+    M.GlassMaxTrans      = 0.32    -- 高光带中部透明度（越大玻璃感越强、图标越淡）
+    M.GlassKey           = 0.42    -- 库 NumberSequence 的中间关键点位置
+
+    M.ExcludeWindowIcon  = true    -- ★ 窗口标题栏 Icon 不加流光 / 不加玻璃
+    M.WindowTitle        = "YX-Loader"          -- 用于识别 TitleHolder
+    M.WindowIconIds      = { "71400987113958" } -- 主脚本 CreateWindow 的 Icon id
+
+    M.IconMaxSize        = 128     -- 超过此边长视为大图 / 背景图 / 赞助码，跳过
+    M.SkipGuiRootImages  = false   -- 默认关：背景图靠上面的尺寸规则挡掉即可，
+                                   -- 避免误伤「直接挂在 ScreenGui 根下」的小图标
+
     -- ---------------------- 内部状态 ----------------------
     local FALLBACK_ACCENT = Color3.fromRGB(130, 200, 248)
 
@@ -2769,6 +2760,10 @@ local YXLibTextFlow = (function(Library)
     local WantedText    = {}                               -- 文本白名单 [string]=true
     local WantedInst    = setmetatable({}, { __mode = "k" }) -- 精确实例（Label / Icon）
     local TabTooltipText = {}                              -- 所有标签 Tooltip 文本
+    local IconSet        = setmetatable({}, { __mode = "k" })  -- 图标目标（走玻璃参数）
+    local IconOrigColor  = setmetatable({}, { __mode = "k" })  -- 图标原始色，卸载时恢复
+    local HolderCache    = setmetatable({}, { __mode = "k" })  -- [Parent] = 是否 TitleHolder
+    local GLASS_TRANS, CLEAR_TRANS = nil, nil
 
     local Acc, ScanAcc, ThemeAcc = 0, 0, 0
     local Conn, Started, FirstFrame = nil, false, true
@@ -2801,6 +2796,86 @@ local YXLibTextFlow = (function(Library)
             if string.find(Name, Key, 1, true) then return true end
         end
         return false
+    end
+
+    -- ---------------------- 本版新增：图标识别 / 窗口 Icon 排除 / 玻璃高光 ----------------------
+    -- 库的 lucide 字体图标 = 带 IconPadding(UIPadding) 的 TextLabel/TextButton
+    local function IsFontIcon(Object)
+        if not IsTextObject(Object) then return false end
+        local Ok, Pad = pcall(function() return Object:FindFirstChild("IconPadding") end)
+        return Ok and Pad ~= nil
+    end
+
+    -- 图标尺寸 / 全透明 / ScreenGui 根图层判定（大图、背景、辉光、赞助码不参与）
+    local function IsDecorative(Object)
+        local S = SafeGet(Object, "AbsoluteSize")
+        if S and type(S) == "table" or (S and type(S) == "userdata") then
+            local W, H = S.X, S.Y
+            if type(W) == "number" and type(H) == "number" then
+                if W == 0 and H == 0 then return true end   -- 尺寸未就绪，下轮再判
+                if math.max(W, H) > (M.IconMaxSize or 128) then return true end
+            end
+        end
+        if M.SkipGuiRootImages and Object.Parent == SafeGet(Library, "ScreenGui") then
+            return true
+        end
+        local T = IsImageObject(Object)
+            and SafeGet(Object, "ImageTransparency")
+            or  SafeGet(Object, "TextTransparency")
+        if T and T >= 0.99 then return true end
+        return false
+    end
+
+    -- ① 按图标 asset id 精确排除（最稳，不受布局影响）
+    local function MatchWindowIconId(Object)
+        local Img = SafeGet(Object, "Image")
+        if type(Img) ~= "string" or Img == "" then return false end
+        for _, Id in ipairs(M.WindowIconIds or {}) do
+            if string.find(Img, tostring(Id), 1, true) then return true end
+        end
+        return false
+    end
+
+    -- ② 按父级是 TitleHolder 兜底：该容器里有 UIListLayout + 窗口标题 TextLabel
+    local function IsTitleHolder(Parent)
+        if not Parent then return false end
+        local Cached = HolderCache[Parent]
+        if Cached ~= nil then return Cached end
+        local HasLayout, HasTitle = false, false
+        pcall(function()
+            for _, C in ipairs(Parent:GetChildren()) do
+                if C:IsA("UIListLayout") then HasLayout = true end
+                if C:IsA("TextLabel") and SafeGet(C, "Text") == M.WindowTitle then
+                    HasTitle = true
+                end
+            end
+        end)
+        local R = HasLayout and HasTitle
+        HolderCache[Parent] = R
+        return R
+    end
+
+    local function IsWindowIcon(Object)
+        if not M.ExcludeWindowIcon then return false end
+        if MatchWindowIconId(Object) then return true end
+        if IsTitleHolder(Object.Parent) then return true end
+        return false
+    end
+
+    -- 库 AddGlassSheen 的 NumberSequence（两端清晰、中部高光带半透）
+    local function BuildGlassTrans()
+        local A = math.max(0, math.min(1, M.GlassMinTrans or 0))
+        local B = math.max(A, math.min(1, M.GlassMaxTrans or 0.32))
+        local K = math.max(0.001, math.min(0.999, M.GlassKey or 0.42))
+        local Ok = pcall(function()
+            GLASS_TRANS = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, A),
+                NumberSequenceKeypoint.new(K, B),
+                NumberSequenceKeypoint.new(1, A),
+            })
+            CLEAR_TRANS = NumberSequence.new(0)
+        end)
+        if not Ok then GLASS_TRANS, CLEAR_TRANS = nil, nil end
     end
 
     -- ---------------------- 配色（照抄库的 4 关键点 sin + Lerp 结构） ----------------------
@@ -2867,6 +2942,7 @@ local YXLibTextFlow = (function(Library)
 
     -- 每次补扫重建：标签页可能运行时新增 / 改名，必须动态取，不能写死。
     local function RebuildTargets()
+        pcall(BuildGlassTrans)          -- 玻璃高光带只构造一次
         for K in pairs(WantedText) do WantedText[K] = nil end
         for K in pairs(WantedInst) do WantedInst[K] = nil end
         for K in pairs(TabTooltipText) do TabTooltipText[K] = nil end
@@ -2933,10 +3009,21 @@ local YXLibTextFlow = (function(Library)
             return M.IncludeTabTooltip and true or false
         end
 
-        -- ② 精确实例：所有标签按钮的 Name 文字 / Icon 图标（图标必须走这条路）
+        -- ② ★ 窗口 Icon 例外：优先级最高，流光 / 玻璃都不加
+        local IsFont = M.IncludeFontIcons and IsFontIcon(Object) or false
+        if (IsIcon or IsFont) and IsWindowIcon(Object) then return false end
+
+        -- ③ 精确实例：所有标签按钮的 Name 文字 / Icon 图标
         if WantedInst[Object] then return true end
 
-        -- ③ 文本白名单：内容区当前标签名 / 描述、窗口 Title / Footer、Tooltip 文案
+        -- ④ ★ 本版新增：所有 Icon（图片图标 + lucide 字体图标）
+        --    窗口 Icon 已在 ② 排除；大图 / 背景 / 辉光 / 全透明由 IsDecorative 挡掉
+        if M.IncludeAllIcons and (IsIcon or IsFont) then
+            if IsDecorative(Object) then return false end
+            return true
+        end
+
+        -- ⑤ 文本白名单：内容区当前标签名 / 描述、窗口 Title / Footer、Tooltip 文案
         if not IsText then return false end
         local Tx = SafeGet(Object, "Text")
         if type(Tx) ~= "string" or Tx == "" then return false end
@@ -2966,6 +3053,14 @@ local YXLibTextFlow = (function(Library)
         if not Ok or not Grad then return end
 
         Targets[Object] = Grad
+        -- 记录图标目标：Tick 里要走「液态玻璃高光」分支，卸载时恢复原始颜色
+        if IsImageObject(Object) or (M.IncludeFontIcons and IsFontIcon(Object)) then
+            IconSet[Object] = true
+            if IconOrigColor[Object] == nil then
+                IconOrigColor[Object] = IsImageObject(Object)
+                    and SafeGet(Object, "ImageColor3") or SafeGet(Object, "TextColor3")
+            end
+        end
         local Tx = IsTextObject(Object) and SafeGet(Object, "Text") or nil
         FontTag[Object] = (Tx ~= nil and string.find(Tx, "<font", 1, true) ~= nil) or false
         -- 记下 Tooltip 浮层原本的文字色，显示非标签页提示时恢复
@@ -3071,7 +3166,18 @@ local YXLibTextFlow = (function(Library)
                     --    Enabled 关掉 / 改 Color / 改 Rotation，这里每帧最后写回，
                     --    保证流光始终盖住它（本模块的连接在文件末尾，最后执行）。
                     Grad.Enabled = true
-                    Grad.Rotation = Rot
+                    if IconSet[Object] and M.IconGlass and GLASS_TRANS then
+                        -- 图标级液态玻璃：库 AddGlassSheen 的 112° 斜向高光带，
+                        -- 与每帧重建的流光 ColorSequence 叠在同一条 UIGradient 上
+                        -- （一个 GuiObject 只留一条渐变，绝不互抢）
+                        Grad.Rotation = (M.GlassRotation or 112)
+                            + math.sin(Clock * M.SwaySpeed) * (M.GlassSway or 0)
+                        Grad.Transparency = GLASS_TRANS
+                    else
+                        Grad.Rotation = Rot
+                        -- 关掉玻璃 / 目标是文字时复位透明度，避免高光带残留
+                        if CLEAR_TRANS then Grad.Transparency = CLEAR_TRANS end
+                    end
                     Grad.Color  = Seq
                     Grad.Offset = Off
                     -- ③ 白基底：UIGradient 与像素相乘，白是恒等元；
@@ -3123,6 +3229,18 @@ local YXLibTextFlow = (function(Library)
         for K in pairs(Seen) do Seen[K] = nil end
         for K in pairs(FontTag) do FontTag[K] = nil end
         for K in pairs(WantedInst) do WantedInst[K] = nil end
+        for K in pairs(IconSet) do IconSet[K] = nil end
+        for K in pairs(HolderCache) do HolderCache[K] = nil end
+        -- 恢复图标被白基底改掉的原色（Registry 不一定登记 ImageColor3）
+        for Object, C in pairs(IconOrigColor) do
+            if C ~= nil then
+                pcall(function()
+                    if IsImageObject(Object) then Object.ImageColor3 = C
+                    else Object.TextColor3 = C end
+                end)
+            end
+            IconOrigColor[Object] = nil
+        end
         for Object, C in pairs(OrigColor) do
             pcall(function() Object.TextColor3 = C end)
             OrigColor[Object] = nil
@@ -3160,6 +3278,32 @@ local YXLibTextFlow = (function(Library)
         return self
     end
     M.SetTargets = M.SetWindowTexts   -- 兼容旧调用名
+
+    -- ===== 本版新增的运行时开关 =====
+    function M:SetAllIcons(V)           -- 所有图标流光 开/关
+        M.IncludeAllIcons = V and true or false
+        for K in pairs(Seen) do Seen[K] = nil end
+        pcall(Scan)
+        return self
+    end
+    function M:SetIconGlass(V)          -- 图标液态玻璃高光 开/关
+        M.IconGlass = V and true or false
+        if M.IconGlass then pcall(BuildGlassTrans) end
+        return self
+    end
+    function M:SetGlassStrength(V)      -- 玻璃感强度 0~1（0=清晰，1=很淡）
+        if type(V) ~= "number" then return self end
+        M.GlassMaxTrans = math.max(0, math.min(1, V))
+        pcall(BuildGlassTrans)
+        return self
+    end
+    function M:SetExcludeWindowIcon(V)  -- 窗口 Icon 排除 开/关
+        M.ExcludeWindowIcon = V and true or false
+        for K in pairs(HolderCache) do HolderCache[K] = nil end
+        for K in pairs(Seen) do Seen[K] = nil end
+        pcall(Scan)
+        return self
+    end
 
     return M
 end)(Library)
