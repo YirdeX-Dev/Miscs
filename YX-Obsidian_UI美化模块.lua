@@ -113,10 +113,12 @@ local DefaultThemeBackground = {
     -- 字段：Background / Main / Accent / Outline / Font / Icon，均为 {R,G,B}
     Palettes = {
         { -- 背景 1：整体提亮一档的浅蓝灰（唯一保留的配色，作为启动默认）
-          -- 背景/主色/描边/强调色同步调浅，整体更明亮；字体仍近白，保持清晰对比度
+          -- 「轮廓颜色 / 文字颜色」两个主题项按需求设为纯白 #FFFFFF：
+          --   对应设置面板里的 OutlineColor / FontColor 两个颜色选择器，
+          --   改后全局控件描边与所有文字都会显示为白色。
             Background = { 32, 44, 64 }, Main = { 46, 62, 88 },
-            Accent = { 130, 200, 248 }, Outline = { 72, 100, 136 },
-            Font = { 240, 246, 255 }, Icon = { 120, 220, 250 },
+            Accent = { 130, 200, 248 }, Outline = { 255, 255, 255 },
+            Font = { 255, 255, 255 }, Icon = { 120, 220, 250 },
         },
     },
 
@@ -251,7 +253,7 @@ local function YXMix(A, B, T)
 end
 
 -- ============================================================
--- 统一主题取色（控件 / 边框 / 辉光共用）
+-- 统一主题取色（控件 / 边框共用）
 --   背景图实测主色 RGB(170,179,198)、色相 221°、低饱和、偏亮，是雾蓝灰。
 --   因此在「跟随主题强调色」基础上做一次雾蓝调和：
 --     * 青绿偏色（约 140°~205°）拉回雾蓝色相 215°，避免再次发绿；
@@ -1651,6 +1653,34 @@ Bg:Enable()
 
 SaveManager:LoadAutoloadConfig()
 
+-- ============================================================
+-- 轮廓颜色 / 文字颜色：默认主题下强制同步为纯白 #FFFFFF
+--   SaveManager:LoadAutoloadConfig() 会用存档里的主题数据覆盖 Library.Scheme
+--   和设置面板的颜色选择器（所以截图里「文字颜色」会显示成存档的浅灰）。
+--   这里在它之后再同步一次，保证启动时打开设置面板这两个色块一定是纯白。
+--   仅默认主题生效：切到别的主题时本段不参与，交给该主题自带的配色
+--   （上面的 ApplyTheme 挂钩也只在切回默认主题时重新套用本模块调色板）。
+-- ============================================================
+do
+    local Current = Bg.LastAppliedTheme
+    if Current == nil or Bg:IsDefaultTheme(Current) then
+        local White = Color3.fromRGB(255, 255, 255)
+        -- 先同步两个颜色选择器，让设置面板色块显示纯白
+        for _, Key in ipairs({ "OutlineColor", "FontColor" }) do
+            local Opt = Library.Options and Library.Options[Key]
+            if Opt and Opt.SetValue then pcall(Opt.SetValue, Opt, White) end
+        end
+        -- 再显式写入精确值，避免颜色选择器 HSV 往返改变最终配色
+        if Library.Scheme then
+            Library.Scheme.OutlineColor = White
+            Library.Scheme.FontColor = White
+        end
+        if Library.UpdateColorsUsingRegistry then
+            pcall(Library.UpdateColorsUsingRegistry, Library)
+        end
+    end
+end
+
 --    YXGradientBorder:Enable()          -- 窗口 + 标签页一起开（默认）
 --    YXGradientBorder:Disable()         -- 全部关闭
 --    YXGradientBorder:EnableTabs()      -- 只开标签页边框
@@ -1673,17 +1703,6 @@ SaveManager:LoadAutoloadConfig()
 --    YXGradientBorder:SetNotifThickness(2)    -- 通知描边粗细
 --  通知由库动态创建/销毁，模块每 0.2s 差量扫描 Library.Notifications，自动挂载与清理。
 --  窗口 / 标签页 / 通知边框统一「跟随主题强调色 + 雾蓝调和」，切主题一起换色，不再写死青色。
---  窗口辉光「采用库自带 WindowGlow」：
---    贴图资源复刻库 CustomImageManager.GetAsset("Glow")：优先库本地 Glow.png
---    （getcustomasset "Obsidian/assets/Glow.png"），失败回退 RobloxId；颜色沿用库
---    GetBetterColor(AccentColor, -1) 微调，挂 ScreenGui 作窗口同级兄弟、跟随窗口。
---  【灰框修复】库 Glow.png 中心约 90% 是实心、仅最外约 5% 羽化；库靠「不透明窗口」
---    盖住实心中心只露一圈柔光。本脚本窗口带背景图偏透明，实心中心透出来就是一整块
---    灰蓝矩形（灰框）。故在「辉光(最底) / 遮心板 / 窗口(最上)」之间补一层与窗口等大、
---    不透明的窗口底色板：只留窗口边框外扩一圈羽化可见 = 真正的边框辉光，灰块消失。
---  这是「辉光贴图」，不是背景图：不铺内容、不遮控件、不挡点击（Active=false）。
---  改 YXGradientBorder.Glow.xxx 调整：Offset / LocalPath / Image / Transparency /
---    FollowAccent / MaskColor / Radius；运行时开关 YXGradientBorder:SetGlow(true / false)
 --  也可直接改 YXGradientBorder.Tabs.xxx / Notifs.xxx（见下方配置表）后即生效。
 -- ============================================================
 
@@ -1703,9 +1722,9 @@ local YXGradientBorder = (function(Library)
     -- 边框颜色默认跟随主题强调色（雾蓝调和），切主题自动换色。
     --   想固定颜色：把下面两行填成 Color3.fromRGB(...)，并把 FollowTheme 设为 false。
     --   也可运行时调 YXGradientBorder:SetColors(Color3, Color3) 临时覆盖。
-    M.FollowTheme  = false                          -- 白色轮廓：不跟随主题色
-    M.EdgeColor    = Color3.fromRGB(255, 255, 255)  -- 端点：白色
-    M.MidColor     = Color3.fromRGB(255, 255, 255)  -- 中点：白色
+    M.FollowTheme  = true   -- true = 边框跟随主题强调色；false = 用下面两个固定色
+    M.EdgeColor    = nil    -- 端点：默认由主题色压暗得到
+    M.MidColor     = nil    -- 中点：默认由主题色提亮得到的高光
 
     -- ===== 标签页边框参数 =====
     M.Tabs = {
@@ -1735,35 +1754,12 @@ local YXGradientBorder = (function(Library)
         Name           = "YXGradientBorder_Notif",
     }
 
-    -- ===== 窗口辉光（采用库 WindowGlow + 遮心板修灰框，只作用于窗口）=====
-    --   层级（ScreenGui 同级、Sibling 按 ZIndex）：辉光(mfz-2) < 遮心板(mfz-1) < 窗口(mfz)
-    --   辉光：库 Glow.png 贴图，对齐「窗口 + 外扩 Offset」，跟随窗口拖动 / 缩放 / 显隐。
-    --   遮心板：与窗口等大、不透明、窗口底色、同圆角 —— 盖住辉光贴图的实心中心，
-    --     只留窗口外扩一圈的羽化边可见。库靠不透明窗口盖中心，这里补这块板补上同一前提，
-    --     窗口带背景图半透明也不会再透出灰蓝矩形（灰框）。
-    M.Glow = {
-        Enabled      = true,
-        Offset       = 30,    -- 向外扩展像素（辉光比窗口大 Offset*2，露出的就是这一圈）
-        LocalPath    = "Obsidian/assets/Glow.png",      -- 库 CustomImageManager 下载到本地的路径
-        Image        = "rbxassetid://88645182616510",  -- 库 assets/Glow.png 的 RobloxId（回退）
-        Transparency = 0,     -- 贴图透明度（库窗口版默认 0；调大更淡）
-        FollowAccent = true,  -- 跟随 Scheme.AccentColor；关掉则固定为创建时的颜色
-        MaskColor    = nil,   -- 遮心板颜色；nil = 自动跟随当前主题 BackgroundColor
-        Name         = "YXWindowGlow",
-    }
-
     M.Enabled = false   -- 窗口边框状态（标签页状态见 M.Tabs.Enabled / M.Notifs.Enabled）
 
     -- ===== 运行时 =====
     local winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
-    local winGlow = nil            -- 窗口辉光 ImageLabel（仅窗口有）
-    local winGlowMask = nil        -- 遮心板 Frame（盖住辉光实心中心，消除灰框）
-    local winGlowMaskColor = nil   -- 上次写入遮心板的底色，避免重复赋值
-    local winMainFrame = nil       -- 窗口 MainFrame 引用，供辉光跟随位置/尺寸/显隐
-    local winGlowColor = nil       -- 上次写入的 ImageColor3，避免每帧重复赋值
     local winConn, tabConn = nil, nil
     local winLast, tabLast, tabAngle, scanAcc = 0, 0, 0, 0
-    local glowAcc = 0             -- 辉光取色降频累加器（0.12s 一次）
     local manualSeq = nil
     local tabItems = {}   -- [目标对象] = {frame, corner, stroke, grad, kind, tab}
     local notifItems = {} -- [通知 Holder] = {frame, corner, stroke, grad}
@@ -1781,41 +1777,6 @@ local YXGradientBorder = (function(Library)
             clamp01(c.G * factor),
             clamp01(c.B * factor)
         )
-    end
-
-    -- 读取主题强调色并做雾蓝调和（与控件、边框同一套取色），
-    --   再经库自带的 GetBetterColor 微调，和 NOL 版辉光保持一致。
-    local function ReadAccentColor()
-        local Base = YXThemeAccentRGB(Library, true)
-        local Col = Color3.new(Base[1], Base[2], Base[3])
-        local Better = Library and Library.GetBetterColor
-        if type(Better) == "function" then
-            local Ok, C = pcall(Better, Library, Col, -1)
-            if Ok and C then return C end
-        end
-        return Col
-    end
-
-    -- 采用库自带辉光资源：复刻库 CustomImageManager.GetAsset("Glow") 的取图逻辑，
-    --   优先库下载到本地的 Glow.png（getcustomasset），失败再回退同一 RobloxId。
-    local function ResolveGlowImage()
-        local Path = (M.Glow and M.Glow.LocalPath) or "Obsidian/assets/Glow.png"
-        if type(getcustomasset) == "function" then
-            local Ok, Id = pcall(getcustomasset, Path)
-            if Ok and Id and Id ~= "" then return Id end
-        end
-        return (M.Glow and M.Glow.Image) or "rbxassetid://88645182616510"
-    end
-
-    -- 遮心板底色：跟随当前主题的窗口背景色（切主题自动变），回退 MainFrame 背景色。
-    local function ReadWindowBg(mf)
-        local C = nil
-        pcall(function()
-            if Library and Library.Scheme then C = Library.Scheme.BackgroundColor end
-        end)
-        if C then return C end
-        if mf then pcall(function() C = mf.BackgroundColor3 end) end
-        return C or Color3.fromRGB(20, 28, 42)
     end
 
     -- 边框配色：跟随主题强调色（雾蓝调和），主题变化即重建序列，不再写死青色。
@@ -1900,113 +1861,6 @@ local YXGradientBorder = (function(Library)
     end
 
     -- ========================================================
-    -- 窗口辉光：采用库 WindowGlow 贴图 + 遮心板消除灰框。
-    --   Glow.png 中心约 90% 实心、仅最外约 5% 羽化。库把整张图垫在「不透明窗口」后，
-    --   中心被窗口盖住，只露外扩一圈羽化 = 边框柔光。本脚本窗口带背景图偏透明，
-    --   实心中心会透成一整块灰蓝矩形（灰框），故补一层「遮心板」补上这个前提：
-    --     辉光(ZIndex=mfz-2) < 遮心板(mfz-1) < 窗口(mfz)
-    --   遮心板与窗口等大、不透明、窗口底色、同圆角，盖住实心中心；只有超出窗口边缘
-    --   的外扩一圈羽化可见。三者均挂 ScreenGui 同级，由 syncGlowBounds 每帧跟随。
-    --   这是辉光贴图，不是背景图：不铺内容、不遮控件、不挡点击（Active=false）。
-    -- ========================================================
-    local function newGlow(mf)
-        if not (M.Glow and M.Glow.Enabled) then return nil end
-        local Host = mf.Parent          -- ScreenGui：与 MainFrame 同级
-        if not Host then return nil end
-        local Off = M.Glow.Offset or 10
-        local mfz = 1
-        pcall(function() mfz = mf.ZIndex or 1 end)
-        local Ok, L = pcall(function()
-            local G = Instance.new("ImageLabel")
-            G.Name = M.Glow.Name or "YXWindowGlow"
-            G.BackgroundTransparency = 1
-            G.BorderSizePixel = 0
-            G.Image = ResolveGlowImage()   -- 采用库 Glow 资源（本地优先 / RobloxId 回退）
-            G.ImageTransparency = M.Glow.Transparency or 0
-            G.ImageColor3 = ReadAccentColor() or Color3.fromRGB(130, 200, 248)
-            G.Active = false
-            G.ZIndex = math.max(-2, mfz - 2)   -- 最底层：辉光
-            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
-            G.Position = UDim2.fromOffset(ap.X - Off, ap.Y - Off)
-            G.Size = UDim2.fromOffset(as.X + Off * 2, as.Y + Off * 2)
-            G.Visible = mf.Visible
-            G.Parent = Host
-            return G
-        end)
-        if not (Ok and L) then return nil end
-
-        -- 遮心板：与窗口等大、不透明、窗口底色、同圆角，盖住辉光实心中心。
-        --   介于辉光与窗口之间，窗口半透明也不会再透出灰蓝实心块（灰框）。
-        pcall(function()
-            local Mask = Instance.new("Frame")
-            Mask.Name = (M.Glow.Name or "YXWindowGlow") .. "Mask"
-            Mask.BorderSizePixel = 0
-            Mask.BackgroundTransparency = 0
-            Mask.BackgroundColor3 = (M.Glow.MaskColor ~= nil and M.Glow.MaskColor) or ReadWindowBg(mf)
-            Mask.Active = false
-            Mask.ZIndex = math.max(-1, mfz - 1)   -- 高于辉光、低于窗口
-            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
-            Mask.Position = UDim2.fromOffset(ap.X, ap.Y)
-            Mask.Size = UDim2.fromOffset(as.X, as.Y)
-            Mask.Visible = mf.Visible
-            Mask.Parent = Host
-            local mc = Instance.new("UICorner")
-            mc.CornerRadius = UDim.new(0, M.Radius or 12)
-            mc.Parent = Mask
-            winGlowMask = Mask
-            winGlowMaskColor = Mask.BackgroundColor3
-        end)
-
-        winMainFrame = mf
-        winGlowColor = L.ImageColor3
-        return L
-    end
-
-    -- 每 0.12s 取一次主题色，仅在颜色变化时写入 ImageColor3（不产生每帧赋值）
-    local function syncGlowColor()
-        if not (M.Glow and M.Glow.FollowAccent and winGlow) then return end
-        local C = ReadAccentColor()
-        if C and C ~= winGlowColor then
-            winGlowColor = C
-            pcall(function() winGlow.ImageColor3 = C end)
-        end
-    end
-
-    -- 遮心板底色跟随主题（切主题时窗口底色变了，遮心板要一起变，避免露出旧色块）
-    local function syncGlowMaskColor()
-        if not winGlowMask then return end
-        local Bg = (M.Glow and M.Glow.MaskColor ~= nil and M.Glow.MaskColor) or ReadWindowBg(winMainFrame)
-        if Bg and Bg ~= winGlowMaskColor then
-            winGlowMaskColor = Bg
-            pcall(function() winGlowMask.BackgroundColor3 = Bg end)
-        end
-    end
-
-    -- 辉光跟随窗口：位置 / 尺寸 / 显隐。Sibling 模式下辉光是窗口同级兄弟，
-    -- 不会随 MainFrame 自动变换，需按 AbsolutePosition/AbsoluteSize 对齐。
-    -- 每帧调用但带变化判断，仅在窗口拖动 / 缩放 / 显隐变化时才写属性。
-    local function syncGlowBounds()
-        if not (winGlow and winMainFrame) then return end
-        pcall(function()
-            local mf = winMainFrame
-            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
-            local Off = (M.Glow and M.Glow.Offset) or 10
-            local pos = UDim2.fromOffset(ap.X - Off, ap.Y - Off)
-            local size = UDim2.fromOffset(as.X + Off * 2, as.Y + Off * 2)
-            if winGlow.Position ~= pos then winGlow.Position = pos end
-            if winGlow.Size ~= size then winGlow.Size = size end
-            if winGlow.Visible ~= mf.Visible then winGlow.Visible = mf.Visible end
-            if winGlowMask then
-                local mpos = UDim2.fromOffset(ap.X, ap.Y)
-                local msize = UDim2.fromOffset(as.X, as.Y)
-                if winGlowMask.Position ~= mpos then winGlowMask.Position = mpos end
-                if winGlowMask.Size ~= msize then winGlowMask.Size = msize end
-                if winGlowMask.Visible ~= mf.Visible then winGlowMask.Visible = mf.Visible end
-            end
-        end)
-    end
-
-    -- ========================================================
     -- 窗口边框
     -- ========================================================
     function M:EnableWindow()
@@ -2020,7 +1874,6 @@ local YXGradientBorder = (function(Library)
         local b = newBorder(mf, M.Radius, M.Thickness, 0, M.Name)
         winFrame, winCorner, winStroke, winGrad = b.frame, b.corner, b.stroke, b.grad
         winStroke.Transparency = M.Transparency
-        winGlow = newGlow(mf)
         M.Enabled = true
         winLast = os.clock()
 
@@ -2035,13 +1888,6 @@ local YXGradientBorder = (function(Library)
             end
             local rot = (winGrad.Rotation + M.Speed * dt) % 360
             winGrad.Rotation = rot
-            syncGlowBounds()            -- 辉光跟随窗口（拖动 / 缩放 / 显隐）
-            glowAcc = glowAcc + dt
-            if glowAcc >= 0.12 then
-                glowAcc = 0
-                syncGlowColor()
-                syncGlowMaskColor()
-            end
             if M.Pulse then
                 winStroke.Thickness = M.Thickness + math.sin(now * 3) * 0.4
             end
@@ -2052,13 +1898,6 @@ local YXGradientBorder = (function(Library)
     function M:DisableWindow()
         if winConn then pcall(function() winConn:Disconnect() end); winConn = nil end
         if winFrame then pcall(function() winFrame:Destroy() end) end
-        if winGlowMask then pcall(function() winGlowMask:Destroy() end) end
-        winGlowMask = nil
-        winGlowMaskColor = nil
-        if winGlow then pcall(function() winGlow:Destroy() end) end
-        winGlow = nil
-        winGlowColor = nil
-        winMainFrame = nil
         winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
         M.Enabled = false
         return self
@@ -2291,29 +2130,11 @@ local YXGradientBorder = (function(Library)
         end
         local seq = buildSequence()
         if winGrad then winGrad.Color = seq end
-        -- 窗口辉光跟 Scheme.AccentColor，不跟边框色序列，这里不动它
         for _, item in pairs(tabItems) do
             if item.grad then item.grad.Color = seq end
         end
         for _, item in pairs(notifItems) do
             if item.grad then item.grad.Color = seq end
-        end
-        return self
-    end
-
-    -- 对应库自带的 Library:SetGlow / Window:SetGlow：运行时开关窗口辉光
-    function M:SetGlow(State)
-        M.Glow.Enabled = State and true or false
-        if not M.Glow.Enabled then
-            if winGlowMask then pcall(function() winGlowMask:Destroy() end) end
-            winGlowMask = nil
-            winGlowMaskColor = nil
-            if winGlow then pcall(function() winGlow:Destroy() end) end
-            winGlow = nil
-            winGlowColor = nil
-        elseif not winGlow and M.Enabled then
-            local mf = getMainFrame()
-            if mf then winGlow = newGlow(mf) end
         end
         return self
     end
@@ -2386,7 +2207,7 @@ YXGradientBorder:Enable()
 --   · 流动：文字原地不动，一条更亮的高光带沿文字左右循环扫过
 --           （UIGradient.Offset 逐帧位移，两端同色，循环无接缝）。
 --   · 渐变：配色取自 Library.Scheme.AccentColor，复用模块顶部同一套雾蓝调和，
---           切换主题时标题渐变和边框 / 按钮 / 滑块一起变，不写死青色。
+--           切换主题时标题渐变和边框 / 按钮 / 滑块一起变，不写死青色、也不写死纯白。
 --   · 关键：库把 TextColor3 登记成 "FontColor"，主题切换会把它改回字体色，
 --           会把渐变乘暗。这里改成固定白色基底，UIGradient 才能完整显色
 --           （白基底只是乘法基底，不会真的显示成白字）。
@@ -2402,8 +2223,8 @@ local YXTitleFlow = (function(Library)
     M.ThemeCheckInterval = 0.12    -- 主题色签名检查间隔
     M.RetryInterval      = 0.25    -- 窗口尚未创建时的重试间隔
     M.Rotation           = 0       -- 渐变角度（0 = 水平扫过）
-    M.BaseWhite          = 1       -- 文字颜色：纯白
-    M.HighWhite          = 1       -- 高光带：纯白（整条渐变纯白，文字保持白色）
+    M.BaseWhite          = 0.28    -- 常态文字色向白色靠拢比例（保留主题色相）
+    M.HighWhite          = 0.88    -- 高光带向白色靠拢比例（接近白，仍跟随主题色）
     M.BandWidth          = 0.20    -- 高光带半宽（相对整条渐变）
     M.Name               = "YXTitleFlow"
 
@@ -2686,4 +2507,4 @@ do
     end
 end
 
--- 11月14日17时04分
+-- 11月14日18时22分
