@@ -1703,9 +1703,9 @@ local YXGradientBorder = (function(Library)
     -- 边框颜色默认跟随主题强调色（雾蓝调和），切主题自动换色。
     --   想固定颜色：把下面两行填成 Color3.fromRGB(...)，并把 FollowTheme 设为 false。
     --   也可运行时调 YXGradientBorder:SetColors(Color3, Color3) 临时覆盖。
-    M.FollowTheme  = true   -- true = 边框跟随主题强调色；false = 用下面两个固定色
-    M.EdgeColor    = nil    -- 端点：默认由主题色压暗得到
-    M.MidColor     = nil    -- 中点：默认由主题色提亮得到的高光
+    M.FollowTheme  = false                          -- 白色轮廓：不跟随主题色
+    M.EdgeColor    = Color3.fromRGB(255, 255, 255)  -- 端点：白色
+    M.MidColor     = Color3.fromRGB(255, 255, 255)  -- 中点：白色
 
     -- ===== 标签页边框参数 =====
     M.Tabs = {
@@ -2402,8 +2402,8 @@ local YXTitleFlow = (function(Library)
     M.ThemeCheckInterval = 0.12    -- 主题色签名检查间隔
     M.RetryInterval      = 0.25    -- 窗口尚未创建时的重试间隔
     M.Rotation           = 0       -- 渐变角度（0 = 水平扫过）
-    M.BaseWhite          = 0.28    -- 常态文字色向白色靠拢比例（保留主题色相）
-    M.HighWhite          = 0.88    -- 高光带向白色靠拢比例（接近白）
+    M.BaseWhite          = 1       -- 文字颜色：纯白
+    M.HighWhite          = 1       -- 高光带：纯白（整条渐变纯白，文字保持白色）
     M.BandWidth          = 0.20    -- 高光带半宽（相对整条渐变）
     M.Name               = "YXTitleFlow"
 
@@ -2619,3 +2619,71 @@ local YXTitleFlow = (function(Library)
 end)(Library)
 
 YXTitleFlow:Enable()
+
+-- 液态玻璃：照搬 UI 库 Library.lua 原版（函数体逐字一致，仅去 Luau 类型注解以适配纯 Lua）
+local GlassSchemeColors = {
+    BackgroundColor = true,
+    MainColor = true,
+}
+
+local function ApplyLiquidGlass(Object, Transparency)
+    if not Object or not Object:IsA("GuiObject") then
+        return
+    end
+
+    if Object.BackgroundTransparency >= 1 then
+        return
+    end
+
+    Object.BackgroundTransparency = Transparency or Library.GlassTransparency or 0.5
+end
+
+local function AddGlassSheen(Parent)
+    if not Parent then
+        return
+    end
+
+    local Sheen = Instance.new("Frame")
+    Sheen.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Sheen.BackgroundTransparency = 0
+    Sheen.BorderSizePixel = 0
+    Sheen.Size = UDim2.fromScale(1, 1)
+    Sheen.Active = false
+    Sheen.ZIndex = 0
+    Sheen.Parent = Parent
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, Library.CornerRadius or 4)
+    Corner.Parent = Sheen
+    table.insert(Library.Corners, Corner)
+
+    local Gradient = Instance.new("UIGradient")
+    Gradient.Rotation = 112
+    Gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.4, Color3.fromRGB(200, 214, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(36, 42, 70)),
+    })
+    Gradient.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.7),
+        NumberSequenceKeypoint.new(0.42, 0.88),
+        NumberSequenceKeypoint.new(1, 0.97),
+    })
+    Gradient.Parent = Sheen
+
+    return Sheen, Gradient
+end
+
+do
+    local MainFrame = Library and Library.Window and Library.Window.MainFrame
+    if MainFrame then
+        pcall(function()
+            for _, Object in ipairs(MainFrame:GetDescendants()) do
+                ApplyLiquidGlass(Object)
+            end
+        end)
+        pcall(AddGlassSheen, MainFrame)
+    end
+end
+
+-- 11月14日17时04分
