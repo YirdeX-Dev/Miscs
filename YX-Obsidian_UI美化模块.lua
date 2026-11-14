@@ -1,6 +1,37 @@
 --[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块 可以二改 ，请不要当卑鄙的盗用者或者倒卖者]]
 
-
+-- ============================================================================
+-- YX · UI 美化模块   ——   所有 Icon「液态玻璃 + 渐变流光」（库原生原理版）
+-- ----------------------------------------------------------------------------
+-- 【本版改动】
+--   ① 液态玻璃：保留窗口级（玻璃高光层 + 面板半透明，移植自新版库 Library.lua），
+--      并新增【图标级】玻璃高光 —— 每个图标的流光渐变叠加库 AddGlassSheen 的
+--      112° 斜向反光带（Rotation + NumberSequence 透明度），不新建任何实例。
+--   ② 流光范围：从「标签按钮 Icon」扩大到【所有 Icon】——
+--      图片图标 ImageLabel / ImageButton，以及 lucide 字体图标
+--      （库 CreateIcon 生成的、带 IconPadding 子对象的 TextLabel / TextButton）。
+--   ③ 窗口 Icon 例外：CreateWindow 里 Icon=... 那个标题栏图标不加流光、不加玻璃，
+--      按「图标 asset id」+「父级是 TitleHolder」双保险精确定位。
+--   ④ 大图 / 背景图 / 辉光 / 赞助码 / 全透明占位一律跳过，避免误染色。
+--   ⑤ 窗口内磨砂玻璃底：不碰 Lighting / 游戏画面，在 MainFrame 内垫一层不透明的
+--      柔和磨砂渐变「景」，替代库原版靠 BlurEffect 模糊的游戏世界；面板半透明后
+--      透出的是这层有明暗层次的磨砂底，而不是同色纯色底板或杂乱 3D 场景。
+--      与「显示背景图」互斥（开图 -> 隐藏磨砂底；关图 -> 显示磨砂底）。
+--
+-- 【流光算法】1:1 采用 SyndromeXph/Obsidian 新版库 Library.lua：
+--   319-336     MakeVioletBlackGradient：4 关键点 sin + Lerp
+--   11022-11056 标题：每帧 RenderStepped 重建 ColorSequence + 强制白字基底
+--   11234-11248 页脚：每帧重建 + Offset 横向平移 + Rotation 摆动
+--   核心是【每帧重新构造整个 ColorSequence】，不是只建一次色带平移 Offset。
+--
+-- 【液态玻璃】库 1593-1644 行 ApplyLiquidGlass + AddGlassSheen：
+--   Rotation=112，Color 白(255,255,255)/浅蓝(200,214,255)/深蓝(36,42,70)，
+--   Transparency 0.7/0.88/0.97。窗口层照搬；图标层把透明度压到温和区间
+--   （默认 0 → 0.32 → 0），否则图标会淡到看不见。
+--
+-- 【用法】主脚本 BEAUTIFY_URL 指向本文件即可，主脚本无需改动。
+--   加载器签名固定：Loader(Library, ThemeManager, SaveManager)
+-- ============================================================================
 local Library, ThemeManager, SaveManager = ...
 
 if not Library then
@@ -2472,6 +2503,8 @@ local YXLiquidGlass = (function(Library)
         if Obj == mf and not M.Glass.IncludeMainFrame then return true end
         if Obj == Sheen then return true end
         local Ok, Handled = pcall(function()
+            -- 磨砂玻璃底是自造的「景」，必须保持不透明，不能被当面板半透明化
+            if string.find(Obj.Name or "", "YXGlassBackdrop", 1, true) then return true end
             if not Obj:IsA("GuiObject") then return true end
             local BT = Obj.BackgroundTransparency
             if type(BT) ~= "number" then return false end
@@ -2663,6 +2696,323 @@ local YXLiquidGlass = (function(Library)
 end)(Library)
 
 YXLiquidGlass:Enable()
+
+-- ============================================================================
+-- 窗口内磨砂玻璃底   ——   「不碰游戏画面」版液态玻璃的「景」
+-- ----------------------------------------------------------------------------
+-- 【成因】库原版 Liquid Glass 是三件套：面板半透明 + 玻璃高光 + SetWorldGlass
+--   （Lighting 里的 BlurEffect 模糊 + ColorCorrectionEffect 压暗降饱和）。
+--   主脚本用的旧库没有这套，本模块此前只复刻了前两件。于是面板设成 0.5 半透明
+--   后，透出的是 MainFrame 那层【不透明的纯色底板】——两层几乎同色叠加，糊成一片、
+--   没层次、白字发灰、斜高光浮在表面像块灰塑料。库原版玻璃后面「有景」（模糊
+--   压暗的 3D 世界），所以通透、柔和、文字清晰。
+--
+-- 【本模块做法】完全不碰 Lighting / 游戏画面，在 MainFrame 内部、所有半透明面板
+--   之下，垫一层【不透明】的柔和磨砂渐变「景」，用两层不同角度的 UIGradient
+--   造出明暗层次与柔光带，模拟被模糊压暗的景物；玻璃后面就有东西可看了。
+--     · Base 层（-2）：不透明，4 关键点斜向渐变，主题底色 + 强调色混入 + 明暗起伏
+--     · Haze 层（-1）：另一角度的柔光带，靠 NumberSequence 两端隐、中部显
+--     · 两层都带 UICorner（跟随窗口圆角），Active=false 不挡点击
+--     · 名字统一含 YXGlassBackdrop：YXLiquidGlass 扫描会跳过（保持不透明），
+--       流光段的 SKIP_NAME 已含 "Backdrop" 也会跳过
+--     · 低频同步主题色 / 圆角 / 窗口重建 / 背景图互斥，不做每帧赋值
+--
+-- 【背景图互斥】库每帧把 ScreenGui 下那张 BackgroundImage(ImageTransparency≈0.75)
+--   的 Visible 设为 HasBackgroundImage and MainFrame.Visible。低频读它的 Visible
+--   即可知道开关状态：显示背景图 -> 隐藏磨砂底；关背景图 -> 显示磨砂底。
+--
+-- 【参数】全部在 M.Backdrop 配置表里，改数字即可，不需要 UI 开关 / 滑块。
+-- ============================================================================
+local YXGlassBackdrop = (function(Library)
+    local M = {}
+
+    M.Backdrop = {
+        Enabled        = true,
+        Name           = "YXGlassBackdrop",
+        HazeName       = "YXGlassBackdropHaze",
+        BaseZ          = -2,        -- 低于玻璃高光层 Sheen(ZIndex=0) 与所有内容
+        HazeZ          = -1,
+        Strength       = 1.0,       -- 磨砂层次总强度 0~2（0=接近纯色，越大越有景）
+        ThemeMix       = 0.30,      -- 混入主题强调色比例，造色相差异
+        LightLift      = 0.20,      -- 亮部提亮
+        DarkDrop       = 0.10,      -- 暗部压暗
+        HazeStrength   = 0.55,      -- 柔光斑明显度 0~1
+        Rotation       = 112,       -- 与库 AddGlassSheen 一致的斜向角度
+        HazeRotation   = -32,       -- 柔光带换个角度，叠出景深
+        SyncInterval   = 0.30,      -- 低频同步（主题 / 圆角 / 互斥 / 重建）
+        ExclusiveWithBackgroundImage = true,  -- 与「显示背景图」互斥
+    }
+
+    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
+    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
+
+    local Conn, Started = nil, false
+    local BoundMF = nil
+    local Base, Haze, BaseGrad, HazeGrad, BaseCorner, HazeCorner = nil, nil, nil, nil, nil, nil
+    local Sig, Acc, Last = nil, 0, 0
+
+    local function Clamp01(v) return math.max(0, math.min(1, v)) end
+    local function Lerp(a, b, t) return a + (b - a) * t end
+    local function Mix(A, B, t)
+        return Color3.new(Lerp(A.R, B.R, t), Lerp(A.G, B.G, t), Lerp(A.B, B.B, t))
+    end
+    local function Shade(C, d)
+        return Color3.new(Clamp01(C.R + d), Clamp01(C.G + d), Clamp01(C.B + d))
+    end
+
+    local function GetMainFrame()
+        if not (Library and Library.Window) then return nil end
+        local mf = Library.Window.MainFrame
+        if mf and mf.Parent then return mf end
+        return nil
+    end
+
+    local function IsAlive(O)
+        if not O then return false end
+        local Ok, P = pcall(function() return O.Parent end)
+        return Ok and P ~= nil
+    end
+
+    local function ThemeColors()
+        local S = Library.Scheme or {}
+        local Bg = S.BackgroundColor or Color3.fromRGB(24, 27, 34)
+        local Ac = S.AccentColor or Color3.fromRGB(130, 200, 248)
+        return Bg, Ac
+    end
+
+    -- 4 关键点：暗 -> 亮(强调色) -> 次亮 -> 深蓝灰，形成柔和斜向明暗带
+    local function BuildBaseColor()
+        local Bg, Ac = ThemeColors()
+        local C = M.Backdrop
+        local K = C.Strength
+        local Deep = Color3.fromRGB(36, 42, 70)   -- 库 Sheen 的暗端色
+        local C0 = Shade(Mix(Bg, Ac, C.ThemeMix * 0.35), -C.DarkDrop * K)
+        local C1 = Shade(Mix(Bg, Ac, C.ThemeMix),         C.LightLift * K)
+        local C2 = Shade(Mix(Bg, Ac, C.ThemeMix * 0.18),  C.LightLift * 0.35 * K)
+        local C3 = Shade(Mix(Bg, Deep, 0.35),            -C.DarkDrop * 0.5 * K)
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0,    C0),
+            ColorSequenceKeypoint.new(0.34, C1),
+            ColorSequenceKeypoint.new(0.68, C2),
+            ColorSequenceKeypoint.new(1,    C3),
+        })
+    end
+
+    -- 柔光带：两端几乎全隐、中部显，颜色白 -> 浅强调色 -> 白
+    local function BuildHazeColor()
+        local _, Ac = ThemeColors()
+        local W = Color3.new(1, 1, 1)
+        local Soft = Mix(W, Ac, 0.35)
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   W),
+            ColorSequenceKeypoint.new(0.5, Soft),
+            ColorSequenceKeypoint.new(1,   W),
+        })
+    end
+    local function BuildHazeTrans()
+        local S = Clamp01(M.Backdrop.HazeStrength * M.Backdrop.Strength)
+        local Mid = 1 - 0.55 * S
+        return NumberSequence.new({
+            NumberSequenceKeypoint.new(0,   0.94),
+            NumberSequenceKeypoint.new(0.5, Mid),
+            NumberSequenceKeypoint.new(1,   0.94),
+        })
+    end
+
+    local function Radius()
+        return UDim.new(0, Library.CornerRadius or 12)
+    end
+
+    local function NewLayer(mf, Name, Z)
+        local F = Instance.new("Frame")
+        F.Name = Name
+        F.Size = UDim2.fromScale(1, 1)
+        F.Position = UDim2.fromScale(0, 0)
+        F.BorderSizePixel = 0
+        F.BackgroundTransparency = 0        -- 不透明：Base 挡住 3D 世界
+        F.BackgroundColor3 = Color3.new(1, 1, 1)
+        F.Active = false
+        F.Visible = true                    -- 首帧即显示，不等第一次同步
+        F.ZIndex = Z
+        F.Parent = mf
+
+        local Co = Instance.new("UICorner")
+        Co.CornerRadius = Radius()
+        Co.Parent = F
+
+        local G = Instance.new("UIGradient")
+        G.Enabled = true
+        G.Parent = F
+        return F, Co, G
+    end
+
+    local function DestroyLayers()
+        for _, O in ipairs({ Haze, Base }) do
+            if O then pcall(function() O:Destroy() end) end
+        end
+        Base, Haze, BaseGrad, HazeGrad, BaseCorner, HazeCorner = nil, nil, nil, nil, nil, nil
+    end
+
+    local function Build(mf)
+        DestroyLayers()
+        local Ok = pcall(function()
+            Base, BaseCorner, BaseGrad = NewLayer(mf, M.Backdrop.Name, M.Backdrop.BaseZ)
+            Haze, HazeCorner, HazeGrad = NewLayer(mf, M.Backdrop.HazeName, M.Backdrop.HazeZ)
+
+            BaseGrad.Rotation = M.Backdrop.Rotation
+            BaseGrad.Color = BuildBaseColor()
+
+            HazeGrad.Rotation = M.Backdrop.HazeRotation
+            HazeGrad.Color = BuildHazeColor()
+            HazeGrad.Transparency = BuildHazeTrans()
+        end)
+        if not Ok then DestroyLayers() end
+        return Ok
+    end
+
+    local function ApplyColors()
+        pcall(function()
+            if BaseGrad then
+                BaseGrad.Rotation = M.Backdrop.Rotation
+                BaseGrad.Color = BuildBaseColor()
+            end
+            if HazeGrad then
+                HazeGrad.Rotation = M.Backdrop.HazeRotation
+                HazeGrad.Color = BuildHazeColor()
+                HazeGrad.Transparency = BuildHazeTrans()
+            end
+        end)
+    end
+
+    local function ThemeSignature()
+        local Bg, Ac = ThemeColors()
+        return string.format("%.3f,%.3f,%.3f|%.3f,%.3f,%.3f|%.2f|%.2f|%.2f|%.2f|%.2f",
+            Bg.R, Bg.G, Bg.B, Ac.R, Ac.G, Ac.B,
+            M.Backdrop.Strength, M.Backdrop.ThemeMix,
+            M.Backdrop.LightLift, M.Backdrop.DarkDrop, M.Backdrop.HazeStrength)
+    end
+
+    -- 库每帧把 ScreenGui 下那张 ImageTransparency≈0.75 的 BackgroundImage
+    -- 的 Visible 设为 HasBackgroundImage and MainFrame.Visible。
+    local function LibBackgroundOn(Screen)
+        if not Screen then return false end
+        local Ok, Res = pcall(function()
+            for _, C in ipairs(Screen:GetChildren()) do
+                if C:IsA("ImageLabel")
+                   and not string.find(C.Name or "", "YX", 1, true)
+                   and C:FindFirstChildOfClass("UICorner") then
+                    local Tr = C.ImageTransparency
+                    if type(Tr) == "number" and math.abs(Tr - 0.75) < 0.02 then
+                        return C.Visible == true
+                    end
+                end
+            end
+            return false
+        end)
+        return (Ok and Res == true)
+    end
+
+    local function Tick(dt)
+        if not M.Backdrop.Enabled then return end
+        if Library.Unloaded then return end
+        local Now = os.clock()
+        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - Last)
+        if Step < 0 then Step = 0 end
+        if Step > 0.2 then Step = 0.2 end
+        Last = Now
+        Acc = Acc + Step
+        if Acc < M.Backdrop.SyncInterval then return end
+        Acc = 0
+
+        local mf = GetMainFrame()
+        if not mf then
+            DestroyLayers(); BoundMF = nil
+            return
+        end
+        if BoundMF ~= mf then            -- 窗口被重建
+            DestroyLayers()
+            BoundMF = mf
+        end
+        if not IsAlive(Base) or not IsAlive(Haze) then
+            Build(mf)
+        end
+
+        -- 主题 / 配置变化 -> 重建渐变（不做每帧赋值）
+        local S2 = ThemeSignature()
+        if S2 ~= Sig then
+            Sig = S2
+            ApplyColors()
+        end
+
+        -- 圆角跟随（UI 设置里的圆角滑块）
+        pcall(function()
+            local R = Radius()
+            if BaseCorner and BaseCorner.CornerRadius ~= R then BaseCorner.CornerRadius = R end
+            if HazeCorner and HazeCorner.CornerRadius ~= R then HazeCorner.CornerRadius = R end
+        end)
+
+        -- 与「显示背景图」互斥
+        local Show = true
+        if M.Backdrop.ExclusiveWithBackgroundImage then
+            Show = not LibBackgroundOn(mf.Parent)
+        end
+        pcall(function()
+            if Base then Base.Visible = Show end
+            if Haze then Haze.Visible = Show end
+        end)
+    end
+
+    function M:Enable()
+        M.Backdrop.Enabled = true
+        if not Heartbeat or Conn then return self end
+        Last = os.clock()
+        local Ok, C = pcall(function()
+            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
+        end)
+        if Ok then Conn = C end
+        local mf = GetMainFrame()
+        if mf then
+            BoundMF = mf
+            Build(mf)
+            Sig = ThemeSignature()
+        end
+        return self
+    end
+
+    function M:Disable()
+        M.Backdrop.Enabled = false
+        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
+        DestroyLayers()
+        BoundMF, Sig = nil, nil
+        return self
+    end
+
+    -- 运行时可调（参数写进配置表，不需要 UI 控件）
+    function M:SetStrength(V)          -- 磨砂层次总强度 0~2
+        if type(V) == "number" then M.Backdrop.Strength = math.max(0, math.min(2, V)); Sig = nil end
+        return self
+    end
+    function M:SetThemeMix(V)          -- 强调色混入比例 0~1
+        if type(V) == "number" then M.Backdrop.ThemeMix = Clamp01(V); Sig = nil end
+        return self
+    end
+    function M:SetHaze(V)              -- 柔光斑明显度 0~1
+        if type(V) == "number" then M.Backdrop.HazeStrength = Clamp01(V); Sig = nil end
+        return self
+    end
+    function M:SetExclusive(V)         -- 与背景图互斥 开/关
+        M.Backdrop.ExclusiveWithBackgroundImage = V and true or false
+        return self
+    end
+    function M:Refresh()
+        Sig = nil
+        return self
+    end
+
+    return M
+end)(Library)
+
+YXGlassBackdrop:Enable()
 
 
 -- ============================================================================
