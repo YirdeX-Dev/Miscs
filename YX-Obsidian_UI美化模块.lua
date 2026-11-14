@@ -1,29 +1,25 @@
 --[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块 可以二改 ，请不要当卑鄙的盗用者]]
+
+
+
+-- ============================================================================
+-- YX · UI 美化模块   ——   所有 Icon「渐变流光」（库原生原理版）
+-- ----------------------------------------------------------------------------
 -- 【本版改动】
---   ① 液态玻璃：保留窗口级（玻璃高光层 + 面板半透明，移植自新版库 Library.lua），
---      并新增【图标级】玻璃高光 —— 每个图标的流光渐变叠加库 AddGlassSheen 的
---      112° 斜向反光带（Rotation + NumberSequence 透明度），不新建任何实例。
---   ② 流光范围：从「标签按钮 Icon」扩大到【所有 Icon】——
+--   ① 流光范围：从「标签按钮 Icon」扩大到【所有 Icon】——
 --      图片图标 ImageLabel / ImageButton，以及 lucide 字体图标
 --      （库 CreateIcon 生成的、带 IconPadding 子对象的 TextLabel / TextButton）。
---   ③ 窗口 Icon 例外：CreateWindow 里 Icon=... 那个标题栏图标不加流光、不加玻璃，
+--   ② 窗口 Icon 例外：CreateWindow 里 Icon=... 那个标题栏图标不加流光，
 --      按「图标 asset id」+「父级是 TitleHolder」双保险精确定位。
---   ④ 大图 / 背景图 / 赞助码 / 全透明占位一律跳过，避免误染色。
---   ⑤ 窗口内磨砂玻璃底：不碰 Lighting / 游戏画面，在 MainFrame 内垫一层不透明的
---      柔和磨砂渐变「景」，替代库原版靠 BlurEffect 模糊的游戏世界；面板半透明后
---      透出的是这层有明暗层次的磨砂底，而不是同色纯色底板或杂乱 3D 场景。
---      与「显示背景图」互斥（开图 -> 隐藏磨砂底；关图 -> 显示磨砂底）。
+--   ③ 大图 / 背景图 / 赞助码 / 全透明占位一律跳过，避免误染色。
+--   ④ 已去除：液态玻璃（窗口玻璃高光层 + 图标玻璃高光带）与窗口磨砂玻璃底。
+--      本文件只保留「渐变流光 + 渐变描边 + 主题背景图」三项美化。
 --
 -- 【流光算法】1:1 采用 SyndromeXph/Obsidian 新版库 Library.lua：
 --   319-336     MakeVioletBlackGradient：4 关键点 sin + Lerp
 --   11022-11056 标题：每帧 RenderStepped 重建 ColorSequence + 强制白字基底
 --   11234-11248 页脚：每帧重建 + Offset 横向平移 + Rotation 摆动
 --   核心是【每帧重新构造整个 ColorSequence】，不是只建一次色带平移 Offset。
---
--- 【液态玻璃】库 1593-1644 行 ApplyLiquidGlass + AddGlassSheen：
---   Rotation=112，Color 白(255,255,255)/浅蓝(200,214,255)/深蓝(36,42,70)，
---   Transparency 0.7/0.88/0.97。窗口层照搬；图标层把透明度压到温和区间
---   （默认 0 → 0.32 → 0），否则图标会淡到看不见。
 --
 -- 【用法】主脚本 BEAUTIFY_URL 指向本文件即可，主脚本无需改动。
 --   加载器签名固定：Loader(Library, ThemeManager, SaveManager)
@@ -2235,605 +2231,6 @@ end)(Library)
 
 YXGradientBorder:Enable()
 
--- ============================================================================
--- 液态玻璃（移植自 SyndromeXph/Obsidian 新版库 Library.lua 的 "Liquid Glass"）
---   库内位置：294-301 行配置 / 1593-1644 行 ApplyLiquidGlass + AddGlassSheen /
---             1646-1681 行 SetWorldGlass / 1789-1821 行 Lighting 特效。
---   本次按需求只采用其中两块，不做「世界模糊 / 压暗」（不创建 BlurEffect、
---     ColorCorrectionEffect，也不改 Lighting）：
---     1) AddGlassSheen    -> 窗口 MainFrame 上的斜向玻璃高光层（完全照搬库实现）
---     2) ApplyLiquidGlass -> 窗口内 BackgroundColor / MainColor 面板半透明化
---   当前主脚本用的是 deividcomsono 旧库，没有内建这些；ApplyLiquidGlass 原本挂在
---   库内部 New() 上，外部拦不到，这里改成「低频扫描窗口后代 + 双路判定」近似复刻：
---     · 路 A：读 Library.Registry[obj].BackgroundColor3 的键（与库原版判定一致）
---     · 路 B：底色是否接近 Library.Scheme.BackgroundColor / MainColor
---             （美化模块会改写部分 Registry 键，路 B 保证这种情况仍能命中）
---   不碰窗口 MainFrame 本体：它自身保持不透明，半透过去也看不到效果。
--- ============================================================================
-local YXLiquidGlass = (function(Library)
-    local M = {}
-
-    M.Glass = {
-        Enabled           = true,
-
-        -- 1) 面板半透明化 -------------------------------------------------
-        Transparency      = 0.5,   -- 与库 GlassTransparency 一致
-        IncludeMainFrame  = false, -- 窗口本体自身保持不透明，半透也看不到效果
-        OnlyOpaque        = true,  -- 只接管当前完全不透明的面板，不破坏控件自设透明度
-        ScanInterval      = 0.35,  -- 运行时新增控件（下拉 / 通知等）补扫间隔
-        ColorTolerance    = 0.08,  -- 主题底色近似匹配容差
-
-        -- 2) 窗口玻璃高光层 ---------------------------------------------
-        SheenEnabled      = true,
-        SheenName         = "YXLiquidGlassSheen",
-        SheenZIndex       = 0,     -- 与库一致；若被背景图压住可调到 990 左右
-        SheenRotation     = 112,   -- 库原版斜向角度
-        SheenColors       = { { 255, 255, 255 }, { 200, 214, 255 }, { 36, 42, 70 } },
-        SheenStops        = { 0, 0.4, 1 },
-        SheenTransparency = { { 0, 0.7 }, { 0.42, 0.88 }, { 1, 0.97 } },
-        SheenFollowTheme  = false, -- 玻璃反光是中性高光，默认不随主题；true 则混入主题强调色
-    }
-
-    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
-    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
-
-    local Conn = nil
-    local Sheen, SheenCorner, SheenGrad = nil, nil, nil
-    local BoundMF, SheenSig = nil, nil
-    local Processed = setmetatable({}, { __mode = "k" })
-    local Origins   = setmetatable({}, { __mode = "k" })
-    local ScanAcc, LastFrame = 0, 0
-
-    local function GetMainFrame()
-        if not (Library and Library.Window) then return nil end
-        local mf = Library.Window.MainFrame
-        if mf and mf.Parent then return mf end
-        return nil
-    end
-
-    local function IsAlive(O)
-        if not O then return false end
-        local Ok, P = pcall(function() return O.Parent end)
-        return Ok and P ~= nil
-    end
-
-    -- 面板判定：Registry 键（库原版逻辑） + 当前底色接近主题 BackgroundColor / MainColor
-    local function IsPanel(Obj)
-        local Reg = Library.Registry and Library.Registry[Obj]
-        local Key = Reg and Reg.BackgroundColor3
-        if type(Key) == "function" then return true end
-        if type(Key) == "string" and (Key == "BackgroundColor" or Key == "MainColor") then
-            return true
-        end
-        local C, S = Obj.BackgroundColor3, Library.Scheme
-        if not (C and S) then return false end
-        local Tol = M.Glass.ColorTolerance or 0.08
-        for _, Name in ipairs({ "BackgroundColor", "MainColor" }) do
-            local T = S[Name]
-            if T and math.abs(C.R - T.R) < Tol
-                  and math.abs(C.G - T.G) < Tol
-                  and math.abs(C.B - T.B) < Tol then
-                return true
-            end
-        end
-        return false
-    end
-
-    -- 返回 true = 以后不用再判断这个对象；false = 属性还没就绪，下轮重试
-    local function ApplyOne(Obj, mf)
-        if Obj == mf and not M.Glass.IncludeMainFrame then return true end
-        if Obj == Sheen then return true end
-        local Ok, Handled = pcall(function()
-            -- 磨砂玻璃底是自造的「景」，必须保持不透明，不能被当面板半透明化
-            if string.find(Obj.Name or "", "YXGlassBackdrop", 1, true) then return true end
-            if not Obj:IsA("GuiObject") then return true end
-            local BT = Obj.BackgroundTransparency
-            if type(BT) ~= "number" then return false end
-            if BT >= 1 then return true end                       -- 本来就全透，跳过
-            if M.Glass.OnlyOpaque and BT > 0.01 then return true end -- 控件自设透明度，别动
-            if not IsPanel(Obj) then return true end
-            Origins[Obj] = BT
-            Obj.BackgroundTransparency = M.Glass.Transparency
-            return true
-        end)
-        return (Ok and Handled) or false
-    end
-
-    local function Scan()
-        local mf = GetMainFrame()
-        if not mf then return end
-        BoundMF = mf
-        pcall(function()
-            for _, Obj in ipairs(mf:GetDescendants()) do
-                if not Processed[Obj] then
-                    if ApplyOne(Obj, mf) then Processed[Obj] = true end
-                end
-            end
-        end)
-    end
-
-    local function BuildSheenColors()
-        local C = M.Glass.SheenColors
-        local function ToColor(T) return Color3.fromRGB(T[1], T[2], T[3]) end
-        local A, B, D = ToColor(C[1]), ToColor(C[2]), ToColor(C[3])
-        if M.Glass.SheenFollowTheme then
-            local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
-            if Ok and RGB then
-                local Acc = Color3.new(RGB[1], RGB[2], RGB[3])
-                B = Color3.new((B.R + Acc.R) / 2, (B.G + Acc.G) / 2, (B.B + Acc.B) / 2)
-            end
-        end
-        return A, B, D
-    end
-
-    local function NewSheen(mf)
-        local G = M.Glass
-        local S = Instance.new("Frame")
-        S.Name = G.SheenName
-        S.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        S.BackgroundTransparency = 0
-        S.BorderSizePixel = 0
-        S.Size = UDim2.fromScale(1, 1)
-        S.Active = false
-        S.ZIndex = G.SheenZIndex
-        S.Parent = mf
-
-        local Corner = Instance.new("UICorner")
-        Corner.CornerRadius = UDim.new(0, Library.CornerRadius or 4)
-        Corner.Parent = S
-        if type(Library.Corners) == "table" then
-            table.insert(Library.Corners, Corner)
-        end
-
-        local A, B, D = BuildSheenColors()
-        local St, Tr = G.SheenStops, G.SheenTransparency
-        local Grad = Instance.new("UIGradient")
-        Grad.Rotation = G.SheenRotation
-        Grad.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(St[1], A),
-            ColorSequenceKeypoint.new(St[2], B),
-            ColorSequenceKeypoint.new(St[3], D),
-        })
-        Grad.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(Tr[1][1], Tr[1][2]),
-            NumberSequenceKeypoint.new(Tr[2][1], Tr[2][2]),
-            NumberSequenceKeypoint.new(Tr[3][1], Tr[3][2]),
-        })
-        Grad.Parent = S
-        return S, Corner, Grad
-    end
-
-    local function RemoveSheen()
-        if SheenCorner and type(Library.Corners) == "table" then
-            for i = #Library.Corners, 1, -1 do
-                if Library.Corners[i] == SheenCorner then
-                    table.remove(Library.Corners, i)
-                end
-            end
-        end
-        if Sheen then pcall(function() Sheen:Destroy() end) end
-        Sheen, SheenCorner, SheenGrad = nil, nil, nil
-    end
-
-    local function Restore()
-        for Obj, Old in pairs(Origins) do
-            pcall(function() Obj.BackgroundTransparency = Old end)
-            Origins[Obj] = nil
-        end
-        Processed = setmetatable({}, { __mode = "k" })
-    end
-
-    local function ThemeSignature()
-        if not M.Glass.SheenFollowTheme then return nil end
-        local Ok, RGB = pcall(function() return YXThemeAccentRGB(Library, true) end)
-        if not (Ok and RGB) then return nil end
-        return string.format("%.3f,%.3f,%.3f", RGB[1], RGB[2], RGB[3])
-    end
-
-    local function Tick(dt)
-        if not M.Glass.Enabled then return end
-        local Now = os.clock()
-        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - LastFrame)
-        if Step < 0 then Step = 0 end
-        if Step > 0.2 then Step = 0.2 end
-        LastFrame = Now
-        ScanAcc = ScanAcc + Step
-        if ScanAcc < M.Glass.ScanInterval then return end
-        ScanAcc = 0
-
-        local mf = GetMainFrame()
-        if not mf then
-            RemoveSheen(); BoundMF = nil
-            return
-        end
-        if BoundMF ~= mf then               -- 窗口被重建
-            RemoveSheen()
-            Processed = setmetatable({}, { __mode = "k" })
-            Origins   = setmetatable({}, { __mode = "k" })
-            BoundMF = mf
-        end
-        if M.Glass.SheenEnabled and not IsAlive(Sheen) then
-            Sheen, SheenCorner, SheenGrad = NewSheen(mf)
-        elseif not M.Glass.SheenEnabled and IsAlive(Sheen) then
-            RemoveSheen()
-        end
-        Scan()
-        if SheenGrad and M.Glass.SheenFollowTheme then
-            local Sig = ThemeSignature()
-            if Sig and Sig ~= SheenSig then
-                SheenSig = Sig
-                local A, B, D = BuildSheenColors()
-                local St = M.Glass.SheenStops
-                pcall(function()
-                    SheenGrad.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(St[1], A),
-                        ColorSequenceKeypoint.new(St[2], B),
-                        ColorSequenceKeypoint.new(St[3], D),
-                    })
-                end)
-            end
-        end
-    end
-
-    function M:Enable()
-        M.Glass.Enabled = true
-        if not Heartbeat or Conn then return self end
-        LastFrame = os.clock()
-        local Ok, C = pcall(function()
-            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
-        end)
-        if Ok then Conn = C end
-        local mf = GetMainFrame()
-        if mf then
-            BoundMF = mf
-            if M.Glass.SheenEnabled then
-                Sheen, SheenCorner, SheenGrad = NewSheen(mf)
-            end
-            Scan()
-        end
-        return self
-    end
-
-    function M:Disable()
-        M.Glass.Enabled = false
-        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
-        RemoveSheen()
-        Restore()
-        BoundMF, SheenSig = nil, nil
-        return self
-    end
-
-    function M:SetTransparency(V)
-        if type(V) == "number" then
-            M.Glass.Transparency = V
-            for Obj in pairs(Origins) do
-                pcall(function() Obj.BackgroundTransparency = V end)
-            end
-        end
-        return self
-    end
-
-    return M
-end)(Library)
-
-YXLiquidGlass:Enable()
-
--- ============================================================================
--- 窗口内磨砂玻璃底   ——   「不碰游戏画面」版液态玻璃的「景」
--- ----------------------------------------------------------------------------
--- 【成因】库原版 Liquid Glass 是三件套：面板半透明 + 玻璃高光 + SetWorldGlass
---   （Lighting 里的 BlurEffect 模糊 + ColorCorrectionEffect 压暗降饱和）。
---   主脚本用的旧库没有这套，本模块此前只复刻了前两件。于是面板设成 0.5 半透明
---   后，透出的是 MainFrame 那层【不透明的纯色底板】——两层几乎同色叠加，糊成一片、
---   没层次、白字发灰、斜高光浮在表面像块灰塑料。库原版玻璃后面「有景」（模糊
---   压暗的 3D 世界），所以通透、柔和、文字清晰。
---
--- 【本模块做法】完全不碰 Lighting / 游戏画面，在 MainFrame 内部、所有半透明面板
---   之下，垫一层【不透明】的柔和磨砂渐变「景」，用两层不同角度的 UIGradient
---   造出明暗层次与柔光带，模拟被模糊压暗的景物；玻璃后面就有东西可看了。
---     · Base 层（-2）：不透明，4 关键点斜向渐变，主题底色 + 强调色混入 + 明暗起伏
---     · Haze 层（-1）：另一角度的柔光带，靠 NumberSequence 两端隐、中部显
---     · 两层都带 UICorner（跟随窗口圆角），Active=false 不挡点击
---     · 名字统一含 YXGlassBackdrop：YXLiquidGlass 扫描会跳过（保持不透明），
---       流光段的 SKIP_NAME 已含 "Backdrop" 也会跳过
---     · 低频同步主题色 / 圆角 / 窗口重建 / 背景图互斥，不做每帧赋值
---
--- 【背景图互斥】库每帧把 ScreenGui 下那张 BackgroundImage(ImageTransparency≈0.75)
---   的 Visible 设为 HasBackgroundImage and MainFrame.Visible。低频读它的 Visible
---   即可知道开关状态：显示背景图 -> 隐藏磨砂底；关背景图 -> 显示磨砂底。
---
--- 【参数】全部在 M.Backdrop 配置表里，改数字即可，不需要 UI 开关 / 滑块。
--- ============================================================================
-local YXGlassBackdrop = (function(Library)
-    local M = {}
-
-    M.Backdrop = {
-        Enabled        = true,
-        Name           = "YXGlassBackdrop",
-        HazeName       = "YXGlassBackdropHaze",
-        BaseZ          = -2,        -- 低于玻璃高光层 Sheen(ZIndex=0) 与所有内容
-        HazeZ          = -1,
-        Strength       = 1.0,       -- 磨砂层次总强度 0~2（0=接近纯色，越大越有景）
-        ThemeMix       = 0.30,      -- 混入主题强调色比例，造色相差异
-        LightLift      = 0.20,      -- 亮部提亮
-        DarkDrop       = 0.10,      -- 暗部压暗
-        HazeStrength   = 0.55,      -- 柔光斑明显度 0~1
-        Rotation       = 112,       -- 与库 AddGlassSheen 一致的斜向角度
-        HazeRotation   = -32,       -- 柔光带换个角度，叠出景深
-        SyncInterval   = 0.30,      -- 低频同步（主题 / 圆角 / 互斥 / 重建）
-        ExclusiveWithBackgroundImage = true,  -- 与「显示背景图」互斥
-    }
-
-    local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
-    local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
-
-    local Conn, Started = nil, false
-    local BoundMF = nil
-    local Base, Haze, BaseGrad, HazeGrad, BaseCorner, HazeCorner = nil, nil, nil, nil, nil, nil
-    local Sig, Acc, Last = nil, 0, 0
-
-    local function Clamp01(v) return math.max(0, math.min(1, v)) end
-    local function Lerp(a, b, t) return a + (b - a) * t end
-    local function Mix(A, B, t)
-        return Color3.new(Lerp(A.R, B.R, t), Lerp(A.G, B.G, t), Lerp(A.B, B.B, t))
-    end
-    local function Shade(C, d)
-        return Color3.new(Clamp01(C.R + d), Clamp01(C.G + d), Clamp01(C.B + d))
-    end
-
-    local function GetMainFrame()
-        if not (Library and Library.Window) then return nil end
-        local mf = Library.Window.MainFrame
-        if mf and mf.Parent then return mf end
-        return nil
-    end
-
-    local function IsAlive(O)
-        if not O then return false end
-        local Ok, P = pcall(function() return O.Parent end)
-        return Ok and P ~= nil
-    end
-
-    local function ThemeColors()
-        local S = Library.Scheme or {}
-        local Bg = S.BackgroundColor or Color3.fromRGB(24, 27, 34)
-        local Ac = S.AccentColor or Color3.fromRGB(130, 200, 248)
-        return Bg, Ac
-    end
-
-    -- 4 关键点：暗 -> 亮(强调色) -> 次亮 -> 深蓝灰，形成柔和斜向明暗带
-    local function BuildBaseColor()
-        local Bg, Ac = ThemeColors()
-        local C = M.Backdrop
-        local K = C.Strength
-        local Deep = Color3.fromRGB(36, 42, 70)   -- 库 Sheen 的暗端色
-        local C0 = Shade(Mix(Bg, Ac, C.ThemeMix * 0.35), -C.DarkDrop * K)
-        local C1 = Shade(Mix(Bg, Ac, C.ThemeMix),         C.LightLift * K)
-        local C2 = Shade(Mix(Bg, Ac, C.ThemeMix * 0.18),  C.LightLift * 0.35 * K)
-        local C3 = Shade(Mix(Bg, Deep, 0.35),            -C.DarkDrop * 0.5 * K)
-        return ColorSequence.new({
-            ColorSequenceKeypoint.new(0,    C0),
-            ColorSequenceKeypoint.new(0.34, C1),
-            ColorSequenceKeypoint.new(0.68, C2),
-            ColorSequenceKeypoint.new(1,    C3),
-        })
-    end
-
-    -- 柔光带：两端几乎全隐、中部显，颜色白 -> 浅强调色 -> 白
-    local function BuildHazeColor()
-        local _, Ac = ThemeColors()
-        local W = Color3.new(1, 1, 1)
-        local Soft = Mix(W, Ac, 0.35)
-        return ColorSequence.new({
-            ColorSequenceKeypoint.new(0,   W),
-            ColorSequenceKeypoint.new(0.5, Soft),
-            ColorSequenceKeypoint.new(1,   W),
-        })
-    end
-    local function BuildHazeTrans()
-        local S = Clamp01(M.Backdrop.HazeStrength * M.Backdrop.Strength)
-        local Mid = 1 - 0.55 * S
-        return NumberSequence.new({
-            NumberSequenceKeypoint.new(0,   0.94),
-            NumberSequenceKeypoint.new(0.5, Mid),
-            NumberSequenceKeypoint.new(1,   0.94),
-        })
-    end
-
-    local function Radius()
-        return UDim.new(0, Library.CornerRadius or 12)
-    end
-
-    local function NewLayer(mf, Name, Z)
-        local F = Instance.new("Frame")
-        F.Name = Name
-        F.Size = UDim2.fromScale(1, 1)
-        F.Position = UDim2.fromScale(0, 0)
-        F.BorderSizePixel = 0
-        F.BackgroundTransparency = 0        -- 不透明：Base 挡住 3D 世界
-        F.BackgroundColor3 = Color3.new(1, 1, 1)
-        F.Active = false
-        F.Visible = true                    -- 首帧即显示，不等第一次同步
-        F.ZIndex = Z
-        F.Parent = mf
-
-        local Co = Instance.new("UICorner")
-        Co.CornerRadius = Radius()
-        Co.Parent = F
-
-        local G = Instance.new("UIGradient")
-        G.Enabled = true
-        G.Parent = F
-        return F, Co, G
-    end
-
-    local function DestroyLayers()
-        for _, O in ipairs({ Haze, Base }) do
-            if O then pcall(function() O:Destroy() end) end
-        end
-        Base, Haze, BaseGrad, HazeGrad, BaseCorner, HazeCorner = nil, nil, nil, nil, nil, nil
-    end
-
-    local function Build(mf)
-        DestroyLayers()
-        local Ok = pcall(function()
-            Base, BaseCorner, BaseGrad = NewLayer(mf, M.Backdrop.Name, M.Backdrop.BaseZ)
-            Haze, HazeCorner, HazeGrad = NewLayer(mf, M.Backdrop.HazeName, M.Backdrop.HazeZ)
-
-            BaseGrad.Rotation = M.Backdrop.Rotation
-            BaseGrad.Color = BuildBaseColor()
-
-            HazeGrad.Rotation = M.Backdrop.HazeRotation
-            HazeGrad.Color = BuildHazeColor()
-            HazeGrad.Transparency = BuildHazeTrans()
-        end)
-        if not Ok then DestroyLayers() end
-        return Ok
-    end
-
-    local function ApplyColors()
-        pcall(function()
-            if BaseGrad then
-                BaseGrad.Rotation = M.Backdrop.Rotation
-                BaseGrad.Color = BuildBaseColor()
-            end
-            if HazeGrad then
-                HazeGrad.Rotation = M.Backdrop.HazeRotation
-                HazeGrad.Color = BuildHazeColor()
-                HazeGrad.Transparency = BuildHazeTrans()
-            end
-        end)
-    end
-
-    local function ThemeSignature()
-        local Bg, Ac = ThemeColors()
-        return string.format("%.3f,%.3f,%.3f|%.3f,%.3f,%.3f|%.2f|%.2f|%.2f|%.2f|%.2f",
-            Bg.R, Bg.G, Bg.B, Ac.R, Ac.G, Ac.B,
-            M.Backdrop.Strength, M.Backdrop.ThemeMix,
-            M.Backdrop.LightLift, M.Backdrop.DarkDrop, M.Backdrop.HazeStrength)
-    end
-
-    -- 库每帧把 ScreenGui 下那张 ImageTransparency≈0.75 的 BackgroundImage
-    -- 的 Visible 设为 HasBackgroundImage and MainFrame.Visible。
-    local function LibBackgroundOn(Screen)
-        if not Screen then return false end
-        local Ok, Res = pcall(function()
-            for _, C in ipairs(Screen:GetChildren()) do
-                if C:IsA("ImageLabel")
-                   and not string.find(C.Name or "", "YX", 1, true)
-                   and C:FindFirstChildOfClass("UICorner") then
-                    local Tr = C.ImageTransparency
-                    if type(Tr) == "number" and math.abs(Tr - 0.75) < 0.02 then
-                        return C.Visible == true
-                    end
-                end
-            end
-            return false
-        end)
-        return (Ok and Res == true)
-    end
-
-    local function Tick(dt)
-        if not M.Backdrop.Enabled then return end
-        if Library.Unloaded then return end
-        local Now = os.clock()
-        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - Last)
-        if Step < 0 then Step = 0 end
-        if Step > 0.2 then Step = 0.2 end
-        Last = Now
-        Acc = Acc + Step
-        if Acc < M.Backdrop.SyncInterval then return end
-        Acc = 0
-
-        local mf = GetMainFrame()
-        if not mf then
-            DestroyLayers(); BoundMF = nil
-            return
-        end
-        if BoundMF ~= mf then            -- 窗口被重建
-            DestroyLayers()
-            BoundMF = mf
-        end
-        if not IsAlive(Base) or not IsAlive(Haze) then
-            Build(mf)
-        end
-
-        -- 主题 / 配置变化 -> 重建渐变（不做每帧赋值）
-        local S2 = ThemeSignature()
-        if S2 ~= Sig then
-            Sig = S2
-            ApplyColors()
-        end
-
-        -- 圆角跟随（UI 设置里的圆角滑块）
-        pcall(function()
-            local R = Radius()
-            if BaseCorner and BaseCorner.CornerRadius ~= R then BaseCorner.CornerRadius = R end
-            if HazeCorner and HazeCorner.CornerRadius ~= R then HazeCorner.CornerRadius = R end
-        end)
-
-        -- 与「显示背景图」互斥
-        local Show = true
-        if M.Backdrop.ExclusiveWithBackgroundImage then
-            Show = not LibBackgroundOn(mf.Parent)
-        end
-        pcall(function()
-            if Base then Base.Visible = Show end
-            if Haze then Haze.Visible = Show end
-        end)
-    end
-
-    function M:Enable()
-        M.Backdrop.Enabled = true
-        if not Heartbeat or Conn then return self end
-        Last = os.clock()
-        local Ok, C = pcall(function()
-            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
-        end)
-        if Ok then Conn = C end
-        local mf = GetMainFrame()
-        if mf then
-            BoundMF = mf
-            Build(mf)
-            Sig = ThemeSignature()
-        end
-        return self
-    end
-
-    function M:Disable()
-        M.Backdrop.Enabled = false
-        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
-        DestroyLayers()
-        BoundMF, Sig = nil, nil
-        return self
-    end
-
-    -- 运行时可调（参数写进配置表，不需要 UI 控件）
-    function M:SetStrength(V)          -- 磨砂层次总强度 0~2
-        if type(V) == "number" then M.Backdrop.Strength = math.max(0, math.min(2, V)); Sig = nil end
-        return self
-    end
-    function M:SetThemeMix(V)          -- 强调色混入比例 0~1
-        if type(V) == "number" then M.Backdrop.ThemeMix = Clamp01(V); Sig = nil end
-        return self
-    end
-    function M:SetHaze(V)              -- 柔光斑明显度 0~1
-        if type(V) == "number" then M.Backdrop.HazeStrength = Clamp01(V); Sig = nil end
-        return self
-    end
-    function M:SetExclusive(V)         -- 与背景图互斥 开/关
-        M.Backdrop.ExclusiveWithBackgroundImage = V and true or false
-        return self
-    end
-    function M:Refresh()
-        Sig = nil
-        return self
-    end
-
-    return M
-end)(Library)
-
-YXGlassBackdrop:Enable()
 
 
 -- ============================================================================
@@ -2901,17 +2298,11 @@ local YXLibTextFlow = (function(Library)
                                     -- 文本刷 TextColor3，图片图标刷 ImageColor3
     M.KeepRichTextColor  = true    -- 含 <font color=...> 的文字保留内联色
 
-    -- ===== 本版新增：所有 Icon 的「液态玻璃 + 流光」=====
+    -- ===== 本版新增：所有 Icon 的「渐变流光」（已去除液态玻璃高光带）=====
     M.IncludeAllIcons    = true    -- 所有图标都流光（不再只限标签按钮 Icon）
     M.IncludeFontIcons   = true    -- 连 lucide 字体图标（带 IconPadding）也一起
-    M.IconGlass          = true    -- 图标叠加液态玻璃 112° 斜向高光带
-    M.GlassRotation      = 112     -- 库 AddGlassSheen 原版角度
-    M.GlassSway          = 6       -- 高光带轻微摆动（度），0 = 固定
-    M.GlassMinTrans      = 0.00    -- 高光带两端透明度（0 = 完全清晰）
-    M.GlassMaxTrans      = 0.32    -- 高光带中部透明度（越大玻璃感越强、图标越淡）
-    M.GlassKey           = 0.42    -- 库 NumberSequence 的中间关键点位置
 
-    M.ExcludeWindowIcon  = true    -- ★ 窗口标题栏 Icon 不加流光 / 不加玻璃
+    M.ExcludeWindowIcon  = true    -- ★ 窗口标题栏 Icon 不加流光
     M.WindowTitle        = "YX-Loader"          -- 用于识别 TitleHolder
     M.WindowIconIds      = { "71400987113958" } -- 主脚本 CreateWindow 的 Icon id
 
@@ -2940,13 +2331,12 @@ local YXLibTextFlow = (function(Library)
     local WantedText    = {}                               -- 文本白名单 [string]=true
     local WantedInst    = setmetatable({}, { __mode = "k" }) -- 精确实例（Label / Icon）
     local TabTooltipText = {}                              -- 所有标签 Tooltip 文本
-    local IconSet        = setmetatable({}, { __mode = "k" })  -- 图标目标（走玻璃参数）
     local IconOrigColor  = setmetatable({}, { __mode = "k" })  -- 图标原始色，卸载时恢复
     -- 白基底事件驱动：每个流光目标挂一个颜色变化监听，主题色回流瞬间立即重设白。
     --   彻底取代旧版「每帧遍历全部目标读色+比较」的 AssertWhiteBase，平时零开销。
     local WhiteConns     = setmetatable({}, { __mode = "k" })  -- [GuiObject] = RBXScriptConnection
     local HolderCache    = setmetatable({}, { __mode = "k" })  -- [Parent] = 是否 TitleHolder
-    local GLASS_TRANS, CLEAR_TRANS = nil, nil
+    local ZERO_TRANS     = NumberSequence.new(0)               -- 流光渐变保持不透明（已无玻璃高光带）
 
     local Acc, ScanAcc, ThemeAcc = 0, 0, 0
     -- 颜色序列按相位量化缓存，避免每帧 ~5 次表分配造成的 GC 压力
@@ -2984,7 +2374,7 @@ local YXLibTextFlow = (function(Library)
         return false
     end
 
-    -- ---------------------- 本版新增：图标识别 / 窗口 Icon 排除 / 玻璃高光 ----------------------
+    -- ---------------------- 本版新增：图标识别 / 窗口 Icon 排除 ----------------------
     -- 库的 lucide 字体图标 = 带 IconPadding(UIPadding) 的 TextLabel/TextButton
     local function IsFontIcon(Object)
         if not IsTextObject(Object) then return false end
@@ -3046,22 +2436,6 @@ local YXLibTextFlow = (function(Library)
         if MatchWindowIconId(Object) then return true end
         if IsTitleHolder(Object.Parent) then return true end
         return false
-    end
-
-    -- 库 AddGlassSheen 的 NumberSequence（两端清晰、中部高光带半透）
-    local function BuildGlassTrans()
-        local A = math.max(0, math.min(1, M.GlassMinTrans or 0))
-        local B = math.max(A, math.min(1, M.GlassMaxTrans or 0.32))
-        local K = math.max(0.001, math.min(0.999, M.GlassKey or 0.42))
-        local Ok = pcall(function()
-            GLASS_TRANS = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, A),
-                NumberSequenceKeypoint.new(K, B),
-                NumberSequenceKeypoint.new(1, A),
-            })
-            CLEAR_TRANS = NumberSequence.new(0)
-        end)
-        if not Ok then GLASS_TRANS, CLEAR_TRANS = nil, nil end
     end
 
     -- ---------------------- 配色（照抄库的 4 关键点 sin + Lerp 结构） ----------------------
@@ -3128,7 +2502,7 @@ local YXLibTextFlow = (function(Library)
 
     -- 每次补扫重建：标签页可能运行时新增 / 改名，必须动态取，不能写死。
     local function RebuildTargets()
-        pcall(BuildGlassTrans)          -- 玻璃高光带只构造一次
+        -- （液态玻璃高光带已移除：流光不再设置 Transparency）
         for K in pairs(WantedText) do WantedText[K] = nil end
         for K in pairs(WantedInst) do WantedInst[K] = nil end
         for K in pairs(TabTooltipText) do TabTooltipText[K] = nil end
@@ -3178,7 +2552,7 @@ local YXLibTextFlow = (function(Library)
         if not M.Enabled or Seen[Object] then return false end
         if NameBlocked(Object) then return false end
 
-        -- 父级链同判（避免玻璃高光容器下的东西被误挂）
+        -- 父级链同判（避免装饰层容器下的东西被误挂）
         local Parent, Depth = Object.Parent, 0
         while Parent and Depth < 4 do
             if NameBlocked(Parent) then return false end
@@ -3195,7 +2569,7 @@ local YXLibTextFlow = (function(Library)
             return M.IncludeTabTooltip and true or false
         end
 
-        -- ② ★ 窗口 Icon 例外：优先级最高，流光 / 玻璃都不加
+        -- ② ★ 窗口 Icon 例外：优先级最高，流光不加
         local IsFont = M.IncludeFontIcons and IsFontIcon(Object) or false
         if (IsIcon or IsFont) and IsWindowIcon(Object) then return false end
 
@@ -3274,9 +2648,8 @@ local YXLibTextFlow = (function(Library)
             end
         end
 
-        -- 记录图标目标：Tick 里要走「液态玻璃高光」分支，卸载时恢复原始颜色
+        -- 记录图标原色：白基底会把 ImageColor3/TextColor3 改白，卸载时恢复
         if IsImageObject(Object) or (M.IncludeFontIcons and IsFontIcon(Object)) then
-            IconSet[Object] = true
             if IconOrigColor[Object] == nil then
                 IconOrigColor[Object] = IsImageObject(Object)
                     and SafeGet(Object, "ImageColor3") or SafeGet(Object, "TextColor3")
@@ -3402,25 +2775,13 @@ local YXLibTextFlow = (function(Library)
                     if not Grad.Enabled then Grad.Enabled = true end
 
                     -- ③ 旋转 / 透明度：用脏标记（AppliedRot / AppliedTrans），
-                    --    值没变就跳过 Roblox 属性写。非玻璃目标这两项本就是常数，
-                    --    每目标只写一次；玻璃目标的透明度也是常数，只有旋转随摆动变。
-                    local nRot, nTrans
-                    if IconSet[Object] and M.IconGlass and GLASS_TRANS then
-                        -- 图标级液态玻璃：库 AddGlassSheen 的 112° 斜向高光带，
-                        -- 与每帧重建的流光 ColorSequence 叠在同一条 UIGradient 上
-                        -- （一个 GuiObject 只留一条渐变，绝不互抢）
-                        nRot   = (M.GlassRotation or 112)
-                                 + math.sin(Clock * M.SwaySpeed) * (M.GlassSway or 0)
-                        nTrans = GLASS_TRANS
-                    else
-                        nRot   = Rot
-                        nTrans = CLEAR_TRANS   -- 关玻璃 / 目标是文字时复位（可能为 nil）
+                    --    值没变就跳过 Roblox 属性写。已去除液态玻璃高光带，
+                    --    旋转为常数（仅摆动项），流光渐变保持不透明。
+                    if AppliedRot[Grad] ~= Rot then
+                        Grad.Rotation = Rot; AppliedRot[Grad] = Rot
                     end
-                    if AppliedRot[Grad] ~= nRot then
-                        Grad.Rotation = nRot; AppliedRot[Grad] = nRot
-                    end
-                    if nTrans and AppliedTrans[Grad] ~= nTrans then
-                        Grad.Transparency = nTrans; AppliedTrans[Grad] = nTrans
+                    if AppliedTrans[Grad] ~= ZERO_TRANS then
+                        Grad.Transparency = ZERO_TRANS; AppliedTrans[Grad] = ZERO_TRANS
                     end
 
                     -- ④ 颜色流光 + 横向平移：流动效果本身，仅在 30fps 降频帧写
@@ -3471,7 +2832,6 @@ local YXLibTextFlow = (function(Library)
         for K in pairs(Seen) do Seen[K] = nil end
         for K in pairs(FontTag) do FontTag[K] = nil end
         for K in pairs(WantedInst) do WantedInst[K] = nil end
-        for K in pairs(IconSet) do IconSet[K] = nil end
         for K in pairs(HolderCache) do HolderCache[K] = nil end
         -- 恢复图标被白基底改掉的原色（Registry 不一定登记 ImageColor3）
         for Object, C in pairs(IconOrigColor) do
@@ -3526,17 +2886,6 @@ local YXLibTextFlow = (function(Library)
         M.IncludeAllIcons = V and true or false
         for K in pairs(Seen) do Seen[K] = nil end
         pcall(Scan)
-        return self
-    end
-    function M:SetIconGlass(V)          -- 图标液态玻璃高光 开/关
-        M.IconGlass = V and true or false
-        if M.IconGlass then pcall(BuildGlassTrans) end
-        return self
-    end
-    function M:SetGlassStrength(V)      -- 玻璃感强度 0~1（0=清晰，1=很淡）
-        if type(V) ~= "number" then return self end
-        M.GlassMaxTrans = math.max(0, math.min(1, V))
-        pcall(BuildGlassTrans)
         return self
     end
     function M:SetExcludeWindowIcon(V)  -- 窗口 Icon 排除 开/关
