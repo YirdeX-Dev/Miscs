@@ -1,3 +1,13 @@
+local YXFskannouncement = ServerTab:AddGroupbox({
+    Side = "Right",
+    Name = "更新公告",
+    Description = "YX-SCRPIT公告",
+    IconName = "megaphone",
+    Visible = true,
+    Collapsed = false,
+    DisableCollapsing = false,
+})
+
 YXFskannouncement:AddLabel("<font color=\"rgb(0, 255, 0)\"> </font>")
 YXFskannouncement:AddLabel("<font color=\"rgb(255,0, 0)\"> </font>")
 
