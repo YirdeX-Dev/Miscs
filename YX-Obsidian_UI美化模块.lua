@@ -1,29 +1,4 @@
---[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块 可以二改 ，请不要当卑鄙的盗用者]]
 
-
-
--- ============================================================================
--- YX · UI 美化模块   ——   所有 Icon「渐变流光」（库原生原理版）
--- ----------------------------------------------------------------------------
--- 【本版改动】
---   ① 流光范围：从「标签按钮 Icon」扩大到【所有 Icon】——
---      图片图标 ImageLabel / ImageButton，以及 lucide 字体图标
---      （库 CreateIcon 生成的、带 IconPadding 子对象的 TextLabel / TextButton）。
---   ② 窗口 Icon 例外：CreateWindow 里 Icon=... 那个标题栏图标不加流光，
---      按「图标 asset id」+「父级是 TitleHolder」双保险精确定位。
---   ③ 大图 / 背景图 / 赞助码 / 全透明占位一律跳过，避免误染色。
---   ④ 已去除：液态玻璃（窗口玻璃高光层 + 图标玻璃高光带）与窗口磨砂玻璃底。
---      本文件只保留「渐变流光 + 渐变描边 + 主题背景图」三项美化。
---
--- 【流光算法】1:1 采用 SyndromeXph/Obsidian 新版库 Library.lua：
---   319-336     MakeVioletBlackGradient：4 关键点 sin + Lerp
---   11022-11056 标题：每帧 RenderStepped 重建 ColorSequence + 强制白字基底
---   11234-11248 页脚：每帧重建 + Offset 横向平移 + Rotation 摆动
---   核心是【每帧重新构造整个 ColorSequence】，不是只建一次色带平移 Offset。
---
--- 【用法】主脚本 BEAUTIFY_URL 指向本文件即可，主脚本无需改动。
---   加载器签名固定：Loader(Library, ThemeManager, SaveManager)
--- ============================================================================
 local Library, ThemeManager, SaveManager = ...
 
 if not Library then
@@ -138,10 +113,10 @@ local DefaultThemeBackground = {
     -- 字段：Background / Main / Accent / Outline / Font / Icon，均为 {R,G,B}
     Palettes = {
         { -- 背景 1：整体提亮一档的浅蓝灰（唯一保留的配色，作为启动默认）
-          -- 背景/主色/强调色保持明亮档；轮廓(Outline)与字体(Font)按要求改成纯白
+          -- 背景/主色/描边/强调色同步调浅，整体更明亮；字体仍近白，保持清晰对比度
             Background = { 32, 44, 64 }, Main = { 46, 62, 88 },
-            Accent = { 130, 200, 248 }, Outline = { 255, 255, 255 },
-            Font = { 255, 255, 255 }, Icon = { 120, 220, 250 },
+            Accent = { 130, 200, 248 }, Outline = { 72, 100, 136 },
+            Font = { 240, 246, 255 }, Icon = { 120, 220, 250 },
         },
     },
 
@@ -276,7 +251,7 @@ local function YXMix(A, B, T)
 end
 
 -- ============================================================
--- 统一主题取色（控件 / 边框共用）
+-- 统一主题取色（控件 / 边框 / 辉光共用）
 --   背景图实测主色 RGB(170,179,198)、色相 221°、低饱和、偏亮，是雾蓝灰。
 --   因此在「跟随主题强调色」基础上做一次雾蓝调和：
 --     * 青绿偏色（约 140°~205°）拉回雾蓝色相 215°，避免再次发绿；
@@ -1502,9 +1477,7 @@ end
 function DefaultThemeBackground:Enable()
     if self.Enabled then return self end
     assert(self.Library, "请先调用 SetLibrary(Library)")
-    -- ThemeManager 可选：内嵌进 Library.lua 后由外部主脚本单独加载，这里可能拿不到。
-    --   有则包装 ApplyTheme 实现「切主题自动回流背景/配色」，无则降级为仅启动套用背景。
-    local HasTM = (self.ThemeManager and type(self.ThemeManager.ApplyTheme) == "function") and true or false
+    assert(self.ThemeManager and type(self.ThemeManager.ApplyTheme) == "function", "请先调用 SetThemeManager(ThemeManager)")
 
     self:InstallCacheOptimizer()
     self:InstallBackgroundTracker()
@@ -1518,7 +1491,6 @@ function DefaultThemeBackground:Enable()
     if self.ApplyPalette then self:ApplyPaletteFor(Startup) end
     self:SaveSelection(Startup)
 
-    if HasTM then
     local Module = self
     local Original = self.ThemeManager.ApplyTheme
     self._OriginalApplyTheme = Original
@@ -1567,7 +1539,6 @@ function DefaultThemeBackground:Enable()
         end
 
         return table.unpack(Results, 1, Results.n)
-    end
     end
 
     self.Enabled = true
@@ -1678,9 +1649,7 @@ Bg:SetLibrary(Library):SetThemeManager(ThemeManager)
 --   不在「UI 设置」里再显示切换项。OnSelect 保持默认 nil（模块内部调用都有判空保护）。
 Bg:Enable()
 
--- 自动配置加载为可选：独立版由主脚本传入 SaveManager 时执行；
---   内嵌进 Library.lua 后无 SaveManager，跳过（自动配置由主脚本自行加载）。
-if SaveManager then pcall(function() SaveManager:LoadAutoloadConfig() end) end
+SaveManager:LoadAutoloadConfig()
 
 --    YXGradientBorder:Enable()          -- 窗口 + 标签页一起开（默认）
 --    YXGradientBorder:Disable()         -- 全部关闭
@@ -1704,6 +1673,17 @@ if SaveManager then pcall(function() SaveManager:LoadAutoloadConfig() end) end
 --    YXGradientBorder:SetNotifThickness(2)    -- 通知描边粗细
 --  通知由库动态创建/销毁，模块每 0.2s 差量扫描 Library.Notifications，自动挂载与清理。
 --  窗口 / 标签页 / 通知边框统一「跟随主题强调色 + 雾蓝调和」，切主题一起换色，不再写死青色。
+--  窗口辉光「采用库自带 WindowGlow」：
+--    贴图资源复刻库 CustomImageManager.GetAsset("Glow")：优先库本地 Glow.png
+--    （getcustomasset "Obsidian/assets/Glow.png"），失败回退 RobloxId；颜色沿用库
+--    GetBetterColor(AccentColor, -1) 微调，挂 ScreenGui 作窗口同级兄弟、跟随窗口。
+--  【灰框修复】库 Glow.png 中心约 90% 是实心、仅最外约 5% 羽化；库靠「不透明窗口」
+--    盖住实心中心只露一圈柔光。本脚本窗口带背景图偏透明，实心中心透出来就是一整块
+--    灰蓝矩形（灰框）。故在「辉光(最底) / 遮心板 / 窗口(最上)」之间补一层与窗口等大、
+--    不透明的窗口底色板：只留窗口边框外扩一圈羽化可见 = 真正的边框辉光，灰块消失。
+--  这是「辉光贴图」，不是背景图：不铺内容、不遮控件、不挡点击（Active=false）。
+--  改 YXGradientBorder.Glow.xxx 调整：Offset / LocalPath / Image / Transparency /
+--    FollowAccent / MaskColor / Radius；运行时开关 YXGradientBorder:SetGlow(true / false)
 --  也可直接改 YXGradientBorder.Tabs.xxx / Notifs.xxx（见下方配置表）后即生效。
 -- ============================================================
 
@@ -1755,16 +1735,35 @@ local YXGradientBorder = (function(Library)
         Name           = "YXGradientBorder_Notif",
     }
 
+    -- ===== 窗口辉光（采用库 WindowGlow + 遮心板修灰框，只作用于窗口）=====
+    --   层级（ScreenGui 同级、Sibling 按 ZIndex）：辉光(mfz-2) < 遮心板(mfz-1) < 窗口(mfz)
+    --   辉光：库 Glow.png 贴图，对齐「窗口 + 外扩 Offset」，跟随窗口拖动 / 缩放 / 显隐。
+    --   遮心板：与窗口等大、不透明、窗口底色、同圆角 —— 盖住辉光贴图的实心中心，
+    --     只留窗口外扩一圈的羽化边可见。库靠不透明窗口盖中心，这里补这块板补上同一前提，
+    --     窗口带背景图半透明也不会再透出灰蓝矩形（灰框）。
+    M.Glow = {
+        Enabled      = true,
+        Offset       = 30,    -- 向外扩展像素（辉光比窗口大 Offset*2，露出的就是这一圈）
+        LocalPath    = "Obsidian/assets/Glow.png",      -- 库 CustomImageManager 下载到本地的路径
+        Image        = "rbxassetid://88645182616510",  -- 库 assets/Glow.png 的 RobloxId（回退）
+        Transparency = 0,     -- 贴图透明度（库窗口版默认 0；调大更淡）
+        FollowAccent = true,  -- 跟随 Scheme.AccentColor；关掉则固定为创建时的颜色
+        MaskColor    = nil,   -- 遮心板颜色；nil = 自动跟随当前主题 BackgroundColor
+        Name         = "YXWindowGlow",
+    }
 
     M.Enabled = false   -- 窗口边框状态（标签页状态见 M.Tabs.Enabled / M.Notifs.Enabled）
 
     -- ===== 运行时 =====
     local winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
+    local winGlow = nil            -- 窗口辉光 ImageLabel（仅窗口有）
+    local winGlowMask = nil        -- 遮心板 Frame（盖住辉光实心中心，消除灰框）
+    local winGlowMaskColor = nil   -- 上次写入遮心板的底色，避免重复赋值
+    local winMainFrame = nil       -- 窗口 MainFrame 引用，供辉光跟随位置/尺寸/显隐
+    local winGlowColor = nil       -- 上次写入的 ImageColor3，避免每帧重复赋值
     local winConn, tabConn = nil, nil
     local winLast, tabLast, tabAngle, scanAcc = 0, 0, 0, 0
-    -- Color 写入脏标记：buildSequence 按主题色缓存，引用不变就跳过 Roblox 属性写，
-    --   避免每帧对全部标签/通知重写同一个 ColorSequence（仅旋转仍需每帧写动画）。
-    local winLastSeq, tabLastSeq, notifLastSeq = nil, nil, nil
+    local glowAcc = 0             -- 辉光取色降频累加器（0.12s 一次）
     local manualSeq = nil
     local tabItems = {}   -- [目标对象] = {frame, corner, stroke, grad, kind, tab}
     local notifItems = {} -- [通知 Holder] = {frame, corner, stroke, grad}
@@ -1785,7 +1784,7 @@ local YXGradientBorder = (function(Library)
     end
 
     -- 读取主题强调色并做雾蓝调和（与控件、边框同一套取色），
-    --   再经库自带的 GetBetterColor 微调。
+    --   再经库自带的 GetBetterColor 微调，和 NOL 版辉光保持一致。
     local function ReadAccentColor()
         local Base = YXThemeAccentRGB(Library, true)
         local Col = Color3.new(Base[1], Base[2], Base[3])
@@ -1797,7 +1796,27 @@ local YXGradientBorder = (function(Library)
         return Col
     end
 
+    -- 采用库自带辉光资源：复刻库 CustomImageManager.GetAsset("Glow") 的取图逻辑，
+    --   优先库下载到本地的 Glow.png（getcustomasset），失败再回退同一 RobloxId。
+    local function ResolveGlowImage()
+        local Path = (M.Glow and M.Glow.LocalPath) or "Obsidian/assets/Glow.png"
+        if type(getcustomasset) == "function" then
+            local Ok, Id = pcall(getcustomasset, Path)
+            if Ok and Id and Id ~= "" then return Id end
+        end
+        return (M.Glow and M.Glow.Image) or "rbxassetid://88645182616510"
+    end
 
+    -- 遮心板底色：跟随当前主题的窗口背景色（切主题自动变），回退 MainFrame 背景色。
+    local function ReadWindowBg(mf)
+        local C = nil
+        pcall(function()
+            if Library and Library.Scheme then C = Library.Scheme.BackgroundColor end
+        end)
+        if C then return C end
+        if mf then pcall(function() C = mf.BackgroundColor3 end) end
+        return C or Color3.fromRGB(20, 28, 42)
+    end
 
     -- 边框配色：跟随主题强调色（雾蓝调和），主题变化即重建序列，不再写死青色。
     --   端点 = 主题色压暗，中点 = 主题色提亮降饱和的高光；0 与 1 端点相同，旋转接缝平滑。
@@ -1880,9 +1899,112 @@ local YXGradientBorder = (function(Library)
         return { frame = f, corner = c, stroke = s, grad = g }
     end
 
+    -- ========================================================
+    -- 窗口辉光：采用库 WindowGlow 贴图 + 遮心板消除灰框。
+    --   Glow.png 中心约 90% 实心、仅最外约 5% 羽化。库把整张图垫在「不透明窗口」后，
+    --   中心被窗口盖住，只露外扩一圈羽化 = 边框柔光。本脚本窗口带背景图偏透明，
+    --   实心中心会透成一整块灰蓝矩形（灰框），故补一层「遮心板」补上这个前提：
+    --     辉光(ZIndex=mfz-2) < 遮心板(mfz-1) < 窗口(mfz)
+    --   遮心板与窗口等大、不透明、窗口底色、同圆角，盖住实心中心；只有超出窗口边缘
+    --   的外扩一圈羽化可见。三者均挂 ScreenGui 同级，由 syncGlowBounds 每帧跟随。
+    --   这是辉光贴图，不是背景图：不铺内容、不遮控件、不挡点击（Active=false）。
+    -- ========================================================
+    local function newGlow(mf)
+        if not (M.Glow and M.Glow.Enabled) then return nil end
+        local Host = mf.Parent          -- ScreenGui：与 MainFrame 同级
+        if not Host then return nil end
+        local Off = M.Glow.Offset or 10
+        local mfz = 1
+        pcall(function() mfz = mf.ZIndex or 1 end)
+        local Ok, L = pcall(function()
+            local G = Instance.new("ImageLabel")
+            G.Name = M.Glow.Name or "YXWindowGlow"
+            G.BackgroundTransparency = 1
+            G.BorderSizePixel = 0
+            G.Image = ResolveGlowImage()   -- 采用库 Glow 资源（本地优先 / RobloxId 回退）
+            G.ImageTransparency = M.Glow.Transparency or 0
+            G.ImageColor3 = ReadAccentColor() or Color3.fromRGB(130, 200, 248)
+            G.Active = false
+            G.ZIndex = math.max(-2, mfz - 2)   -- 最底层：辉光
+            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
+            G.Position = UDim2.fromOffset(ap.X - Off, ap.Y - Off)
+            G.Size = UDim2.fromOffset(as.X + Off * 2, as.Y + Off * 2)
+            G.Visible = mf.Visible
+            G.Parent = Host
+            return G
+        end)
+        if not (Ok and L) then return nil end
 
+        -- 遮心板：与窗口等大、不透明、窗口底色、同圆角，盖住辉光实心中心。
+        --   介于辉光与窗口之间，窗口半透明也不会再透出灰蓝实心块（灰框）。
+        pcall(function()
+            local Mask = Instance.new("Frame")
+            Mask.Name = (M.Glow.Name or "YXWindowGlow") .. "Mask"
+            Mask.BorderSizePixel = 0
+            Mask.BackgroundTransparency = 0
+            Mask.BackgroundColor3 = (M.Glow.MaskColor ~= nil and M.Glow.MaskColor) or ReadWindowBg(mf)
+            Mask.Active = false
+            Mask.ZIndex = math.max(-1, mfz - 1)   -- 高于辉光、低于窗口
+            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
+            Mask.Position = UDim2.fromOffset(ap.X, ap.Y)
+            Mask.Size = UDim2.fromOffset(as.X, as.Y)
+            Mask.Visible = mf.Visible
+            Mask.Parent = Host
+            local mc = Instance.new("UICorner")
+            mc.CornerRadius = UDim.new(0, M.Radius or 12)
+            mc.Parent = Mask
+            winGlowMask = Mask
+            winGlowMaskColor = Mask.BackgroundColor3
+        end)
 
+        winMainFrame = mf
+        winGlowColor = L.ImageColor3
+        return L
+    end
 
+    -- 每 0.12s 取一次主题色，仅在颜色变化时写入 ImageColor3（不产生每帧赋值）
+    local function syncGlowColor()
+        if not (M.Glow and M.Glow.FollowAccent and winGlow) then return end
+        local C = ReadAccentColor()
+        if C and C ~= winGlowColor then
+            winGlowColor = C
+            pcall(function() winGlow.ImageColor3 = C end)
+        end
+    end
+
+    -- 遮心板底色跟随主题（切主题时窗口底色变了，遮心板要一起变，避免露出旧色块）
+    local function syncGlowMaskColor()
+        if not winGlowMask then return end
+        local Bg = (M.Glow and M.Glow.MaskColor ~= nil and M.Glow.MaskColor) or ReadWindowBg(winMainFrame)
+        if Bg and Bg ~= winGlowMaskColor then
+            winGlowMaskColor = Bg
+            pcall(function() winGlowMask.BackgroundColor3 = Bg end)
+        end
+    end
+
+    -- 辉光跟随窗口：位置 / 尺寸 / 显隐。Sibling 模式下辉光是窗口同级兄弟，
+    -- 不会随 MainFrame 自动变换，需按 AbsolutePosition/AbsoluteSize 对齐。
+    -- 每帧调用但带变化判断，仅在窗口拖动 / 缩放 / 显隐变化时才写属性。
+    local function syncGlowBounds()
+        if not (winGlow and winMainFrame) then return end
+        pcall(function()
+            local mf = winMainFrame
+            local ap, as = mf.AbsolutePosition, mf.AbsoluteSize
+            local Off = (M.Glow and M.Glow.Offset) or 10
+            local pos = UDim2.fromOffset(ap.X - Off, ap.Y - Off)
+            local size = UDim2.fromOffset(as.X + Off * 2, as.Y + Off * 2)
+            if winGlow.Position ~= pos then winGlow.Position = pos end
+            if winGlow.Size ~= size then winGlow.Size = size end
+            if winGlow.Visible ~= mf.Visible then winGlow.Visible = mf.Visible end
+            if winGlowMask then
+                local mpos = UDim2.fromOffset(ap.X, ap.Y)
+                local msize = UDim2.fromOffset(as.X, as.Y)
+                if winGlowMask.Position ~= mpos then winGlowMask.Position = mpos end
+                if winGlowMask.Size ~= msize then winGlowMask.Size = msize end
+                if winGlowMask.Visible ~= mf.Visible then winGlowMask.Visible = mf.Visible end
+            end
+        end)
+    end
 
     -- ========================================================
     -- 窗口边框
@@ -1898,6 +2020,7 @@ local YXGradientBorder = (function(Library)
         local b = newBorder(mf, M.Radius, M.Thickness, 0, M.Name)
         winFrame, winCorner, winStroke, winGrad = b.frame, b.corner, b.stroke, b.grad
         winStroke.Transparency = M.Transparency
+        winGlow = newGlow(mf)
         M.Enabled = true
         winLast = os.clock()
 
@@ -1908,10 +2031,17 @@ local YXGradientBorder = (function(Library)
             winLast = now
             if not manualSeq then
                 local seq = buildSequence()
-                if seq ~= winLastSeq then winGrad.Color = seq; winLastSeq = seq end
+                winGrad.Color = seq
             end
             local rot = (winGrad.Rotation + M.Speed * dt) % 360
             winGrad.Rotation = rot
+            syncGlowBounds()            -- 辉光跟随窗口（拖动 / 缩放 / 显隐）
+            glowAcc = glowAcc + dt
+            if glowAcc >= 0.12 then
+                glowAcc = 0
+                syncGlowColor()
+                syncGlowMaskColor()
+            end
             if M.Pulse then
                 winStroke.Thickness = M.Thickness + math.sin(now * 3) * 0.4
             end
@@ -1922,6 +2052,13 @@ local YXGradientBorder = (function(Library)
     function M:DisableWindow()
         if winConn then pcall(function() winConn:Disconnect() end); winConn = nil end
         if winFrame then pcall(function() winFrame:Destroy() end) end
+        if winGlowMask then pcall(function() winGlowMask:Destroy() end) end
+        winGlowMask = nil
+        winGlowMaskColor = nil
+        if winGlow then pcall(function() winGlow:Destroy() end) end
+        winGlow = nil
+        winGlowColor = nil
+        winMainFrame = nil
         winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
         M.Enabled = false
         return self
@@ -2005,11 +2142,9 @@ local YXGradientBorder = (function(Library)
             if scanAcc >= 0.2 then scanAcc = 0; syncTargets() end
 
             local activeTab = Library and Library.ActiveTab
-            local tabSeqChanged = (seq ~= tabLastSeq)
-            if tabSeqChanged then tabLastSeq = seq end
             for obj, item in pairs(tabItems) do
                 if item.frame and item.frame.Parent then
-                    if tabSeqChanged then item.grad.Color = seq end
+                    item.grad.Color = seq
                     item.grad.Rotation = tabAngle
                     if item.kind == "button" then
                         local active = (item.tab == activeTab)
@@ -2102,11 +2237,9 @@ local YXGradientBorder = (function(Library)
             notifAngle = (notifAngle + M.Notifs.Speed * dt) % 360
             notifScanAcc = notifScanAcc + dt
             if notifScanAcc >= 0.2 then notifScanAcc = 0; syncNotifs() end
-            local notifSeqChanged = (seq ~= notifLastSeq)
-            if notifSeqChanged then notifLastSeq = seq end
             for _, item in pairs(notifItems) do
                 if item.frame and item.frame.Parent then
-                    if notifSeqChanged then item.grad.Color = seq end
+                    item.grad.Color = seq
                     item.grad.Rotation = notifAngle
                 end
             end
@@ -2158,6 +2291,7 @@ local YXGradientBorder = (function(Library)
         end
         local seq = buildSequence()
         if winGrad then winGrad.Color = seq end
+        -- 窗口辉光跟 Scheme.AccentColor，不跟边框色序列，这里不动它
         for _, item in pairs(tabItems) do
             if item.grad then item.grad.Color = seq end
         end
@@ -2167,6 +2301,22 @@ local YXGradientBorder = (function(Library)
         return self
     end
 
+    -- 对应库自带的 Library:SetGlow / Window:SetGlow：运行时开关窗口辉光
+    function M:SetGlow(State)
+        M.Glow.Enabled = State and true or false
+        if not M.Glow.Enabled then
+            if winGlowMask then pcall(function() winGlowMask:Destroy() end) end
+            winGlowMask = nil
+            winGlowMaskColor = nil
+            if winGlow then pcall(function() winGlow:Destroy() end) end
+            winGlow = nil
+            winGlowColor = nil
+        elseif not winGlow and M.Enabled then
+            local mf = getMainFrame()
+            if mf then winGlow = newGlow(mf) end
+        end
+        return self
+    end
 
     function M:SetSpeed(v)   if type(v) == "number" then M.Speed = v end; return self end
     function M:SetThickness(v)
@@ -2230,674 +2380,242 @@ local YXGradientBorder = (function(Library)
 end)(Library)
 
 YXGradientBorder:Enable()
-
-
-
 -- ============================================================================
--- 指定 4 组文本 渐变流光   ——   算法 1:1 移植自新版库 Library.lua
+-- 窗口标题「流光渐变」：接管 Library:CreateWindow({ Title = "YX-Loader", ... })
+--   生成的 WindowTitle 这个 TextLabel（文字本身不被修改）。
+--   · 流动：文字原地不动，一条更亮的高光带沿文字左右循环扫过
+--           （UIGradient.Offset 逐帧位移，两端同色，循环无接缝）。
+--   · 渐变：配色取自 Library.Scheme.AccentColor，复用模块顶部同一套雾蓝调和，
+--           切换主题时标题渐变和边框 / 按钮 / 滑块一起变，不写死青色。
+--   · 关键：库把 TextColor3 登记成 "FontColor"，主题切换会把它改回字体色，
+--           会把渐变乘暗。这里改成固定白色基底，UIGradient 才能完整显色
+--           （白基底只是乘法基底，不会真的显示成白字）。
+--   · 不修改库、不修改主脚本，只在美化模块里接管这一个 TextLabel。
 -- ============================================================================
-local YXLibTextFlow = (function(Library)
+local YXTitleFlow = (function(Library)
     local M = {}
 
-    -- ---------------------- 可调配置 ----------------------
-    -- 【库 Library.lua 原生流光字参数对照】下面每项都与库一一对应，改这里 = 改库那个效果：
-    --   颜色常量  Violet(148,0,211) / SoftViolet(186,85,255) / PureBlack(0,0,0)   [318-320 行]
-    --   关键点    0 / 0.33 / 0.66 / 1                                             [330-333 行]
-    --   相位      0 / 1.2 / 2.4 / 3.6（步长 1.2）                                [325-328 行]
-    --   颜色速度  标题 os.clock()*0.25 / 页脚 *0.28 / 通知进度条 *0.35            [11053/11245/10715 行]
-    --   横向平移  页脚 (Clock*0.28)%2-1                                          [11246 行]
-    --   旋转摆动  页脚 sin(Clock*0.85)*16                                        [11247 行]
-    --   驱动      RenderStepped 每帧重建 ColorSequence + 每帧 TextColor3=白      [11049/11241 行]
-    -- 库把这些系数全部写死，这里提成参数；默认值 = 整体提亮 + 整体加速。
+    -- 可调配置 -------------------------------------------------------------
     M.Enabled            = true
-
-    -- ===== 速度（默认约为库 2.7 倍，流光明显加快）=====
-    M.Speed              = 0.75      -- ① 颜色循环速度（库 0.25 / 0.28 / 0.35）
-    M.OffsetSpeed        = 0.75      -- ② 色带横向平移速度（库 0.28）
-    M.SwaySpeed          = 1.70      -- ③ 摆动角速度（库 0.85）
-    M.Sway               = 16        -- ④ 摆动幅度，单位度（库 16；0 = 不摆）
-    M.Interval           = 1/30      -- ⑤ 流光动画降频到 30fps（人眼对流动无感，CPU 直接减半）；
-                                     --    主题/扫描累加器仍每帧跑，响应不受影响。改 0 = 每帧。
-
-    -- ===== 波形（库 MakeVioletBlackGradient 的写死值，照搬为参数）=====
-    M.PhaseStep          = 1.2       -- ⑥ 相位步长：0 / 1.2 / 2.4 / 3.6
-    M.Key2               = 0.33      -- ⑦ 第 2 关键点位置
-    M.Key3               = 0.66      -- ⑧ 第 3 关键点位置
-
-    -- ===== 配色（库三色 + 整体提亮）=====
-    M.Brightness         = 0.62      -- ⑨ 整体亮度 0~1：0=强调色原色（偏暗），1=接近纯白
-                                     --    三档全部落在亮区间，暗端不再是纯黑/深蓝灰，
-                                     --    也不会出现固定纯白中点（"一暗一白"已中和）
-    M.UseLibraryPalette  = false     -- ⑩ true=切回库原版紫黑三色，便于和库逐帧对照
-
-    -- ===== 作用范围：所有标签页的 Name / Description / Icon / Tooltip =====
-    -- 【不再写死某几个文本】每次补扫都从库的数据结构动态收集：
-    --   Library.Tabs      （字典）→ 每个标签页的 Name / Description / Tooltip
-    --   Library.TabButtons（数组）→ 每个标签按钮的 .Label 名称文字 + .Icon 图标
-    -- 因此「所有标签页」自动覆盖，新增 / 改名标签页无需改配置。
-    -- 内容区顶部的当前标签名 / 描述、悬停 Tooltip 浮层，用文本白名单命中。
-    -- 其余所有文字与未登记图标一律【不挂渐变、不刷白基底】，交给主题色 Registry。
-    M.WindowTexts = {                          -- 窗口级固定文本（Title / Footer）
-        ["YX-Loader"] = true,
-        ["YX-Loader | 仍在开发中"] = true,
-    }
-    M.AutoTabs           = true    -- 自动收集所有标签页（关掉则只流光 WindowTexts）
-    M.IncludeTabName     = true    -- ① 标签页 Name
-    M.IncludeTabDesc     = true    -- ② 标签页 Description
-    M.IncludeTabIcon     = true    -- ③ 标签页 Icon（图片 / 字体图标都支持）
-    M.IncludeTabTooltip  = true    -- ④ 标签页 Tooltip（悬停浮层）
-    M.OnlyTabTooltips    = true    -- Tooltip 浮层为全局单例：只在显示「标签页提示」
-                                    -- 时流光，其它控件提示保持主题色（原色自动恢复）
-    M.ScanInterval       = 1.0     -- 动态补扫间隔（切换标签 / 通知 / 对话框）。
-                                    --   已靠 DescendantAdded 实时捕获新增元素，整树扫描
-                                    --   无需太频繁；从 0.5s 提到 1.0s，降低大 UI 下的周期卡顿。
-    M.ThemeInterval      = 0.3     -- 主题强调色重取间隔
-    M.TakeOverExisting   = true    -- 复用对象上已有的 UIGradient；一个 GuiObject 挂
-                                    -- 两条会互相打架，复用同一条才能真流动
-    M.WhiteBase          = true    -- 每帧强制白基底（库同款；相乘时白 = 恒等元）
-                                    -- 文本刷 TextColor3，图片图标刷 ImageColor3
-    M.KeepRichTextColor  = true    -- 含 <font color=...> 的文字保留内联色
-
-    -- ===== 本版新增：所有 Icon 的「渐变流光」（已去除液态玻璃高光带）=====
-    M.IncludeAllIcons    = true    -- 所有图标都流光（不再只限标签按钮 Icon）
-    M.IncludeFontIcons   = true    -- 连 lucide 字体图标（带 IconPadding）也一起
-
-    M.ExcludeWindowIcon  = true    -- ★ 窗口标题栏 Icon 不加流光
-    M.WindowTitle        = "YX-Loader"          -- 用于识别 TitleHolder
-    M.WindowIconIds      = { "71400987113958" } -- 主脚本 CreateWindow 的 Icon id
-
-    M.IconMaxSize        = 128     -- 超过此边长视为大图 / 背景图 / 赞助码，跳过
-    M.SkipGuiRootImages  = false   -- 默认关：背景图靠上面的尺寸规则挡掉即可，
-                                   -- 避免误伤「直接挂在 ScreenGui 根下」的小图标
-
-    -- ---------------------- 内部状态 ----------------------
-    local FALLBACK_ACCENT = Color3.fromRGB(130, 200, 248)
-    -- 白基底（UIGradient 相乘时白 = 恒等元）：全局复用，避免每帧新建
-    local WHITE = Color3.new(1, 1, 1)
-
-    -- 脏标记：记录每个渐变上一次实际写出的 Rotation / Transparency，
-    --   值没变就跳过 Roblox 属性写（每帧省掉对全部目标的大量实例写入）。
-    local AppliedRot    = setmetatable({}, { __mode = "k" })
-    local AppliedTrans  = setmetatable({}, { __mode = "k" })
+    M.Speed              = 0.45    -- 流光速度：每秒扫过多少个标题宽度（0.45 ≈ 2.2 秒一轮）
+    M.Interval           = 1 / 30  -- 属性写入间隔（计时逐帧，写入降到约 30Hz）
+    M.ThemeCheckInterval = 0.12    -- 主题色签名检查间隔
+    M.RetryInterval      = 0.25    -- 窗口尚未创建时的重试间隔
+    M.Rotation           = 0       -- 渐变角度（0 = 水平扫过）
+    M.BaseWhite          = 0.28    -- 常态文字色向白色靠拢比例（保留主题色相）
+    M.HighWhite          = 0.88    -- 高光带向白色靠拢比例（接近白）
+    M.BandWidth          = 0.20    -- 高光带半宽（相对整条渐变）
+    M.Name               = "YXTitleFlow"
 
     local OkRun, RunService = pcall(function() return game:GetService("RunService") end)
     local Heartbeat = (OkRun and RunService and RunService.Heartbeat) or nil
 
-    local Targets   = setmetatable({}, { __mode = "k" })   -- [GuiObject] = UIGradient
-    local Seen      = setmetatable({}, { __mode = "k" })   -- 已判定过的对象
-    local FontTag   = setmetatable({}, { __mode = "k" })   -- 含 <font color> 的对象
-    local BoundRoot = setmetatable({}, { __mode = "k" })   -- 已挂 DescendantAdded 的根
-    local OrigColor = setmetatable({}, { __mode = "k" })   -- Tooltip 浮层原始文字色
-    local WantedText    = {}                               -- 文本白名单 [string]=true
-    local WantedInst    = setmetatable({}, { __mode = "k" }) -- 精确实例（Label / Icon）
-    local TabTooltipText = {}                              -- 所有标签 Tooltip 文本
-    local IconOrigColor  = setmetatable({}, { __mode = "k" })  -- 图标原始色，卸载时恢复
-    -- 白基底事件驱动：每个流光目标挂一个颜色变化监听，主题色回流瞬间立即重设白。
-    --   彻底取代旧版「每帧遍历全部目标读色+比较」的 AssertWhiteBase，平时零开销。
-    local WhiteConns     = setmetatable({}, { __mode = "k" })  -- [GuiObject] = RBXScriptConnection
-    local HolderCache    = setmetatable({}, { __mode = "k" })  -- [Parent] = 是否 TitleHolder
-    local ZERO_TRANS     = NumberSequence.new(0)               -- 流光渐变保持不透明（已无玻璃高光带）
+    local Conn, TitleLabel, Grad = nil, nil, nil
+    local Seq, Sig, AppliedSeq = nil, nil, nil
+    local Phase, LastFrame = 0, 0
+    local WriteAcc, ThemeAcc, RetryAcc = 0, 0, 0
 
-    local Acc, ScanAcc, ThemeAcc = 0, 0, 0
-    -- 颜色序列按相位量化缓存，避免每帧 ~5 次表分配造成的 GC 压力
-    local LastSeq, LastSeqShift = nil, nil
-    local SEQ_STEP = 0.01
-    local Conn, Started, FirstFrame = nil, false, true
-
-    local function SafeGet(Object, Key)
-        local Ok, Value = pcall(function() return Object[Key] end)
-        if Ok then return Value end
-        return nil
+    local function Clamp(V, Lo, Hi)
+        if V < Lo then return Lo end
+        if V > Hi then return Hi end
+        return V
     end
 
-    local function IsTextObject(Object)
-        return Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox")
-    end
-    local function IsImageObject(Object)
-        return Object:IsA("ImageLabel") or Object:IsA("ImageButton")
-    end
-    -- 库全局唯一的悬停提示浮层 TooltipLabel：ZIndex = 30（全库仅此一处）
-    local function IsTooltipLabel(Object)
-        return IsTextObject(Object) and SafeGet(Object, "ZIndex") == 30
+    -- 只靠 Parent 判断存活，不用 IsDescendantOf(game)（真机 UI 不在 game 下会被误杀）
+    local function IsAlive(O)
+        if not O then return false end
+        local Ok, P = pcall(function() return O.Parent end)
+        return Ok and P ~= nil
     end
 
-    -- 玻璃高光 / 背景 / 模糊 / 遮罩 等装饰层不参与
-    local SKIP_NAME = {
-        "YXLiquidGlassSheen", "YXLibFlowGradient", "Sheen", "Shadow",
-        "Blur", "Acrylic", "Backdrop", "Mask",
-    }
-    local function NameBlocked(Object)
-        local Name = Object.Name or ""
-        for _, Key in ipairs(SKIP_NAME) do
-            if string.find(Name, Key, 1, true) then return true end
-        end
-        return false
-    end
-
-    -- ---------------------- 本版新增：图标识别 / 窗口 Icon 排除 ----------------------
-    -- 库的 lucide 字体图标 = 带 IconPadding(UIPadding) 的 TextLabel/TextButton
-    local function IsFontIcon(Object)
-        if not IsTextObject(Object) then return false end
-        local Ok, Pad = pcall(function() return Object:FindFirstChild("IconPadding") end)
-        return Ok and Pad ~= nil
-    end
-
-    -- 图标尺寸 / 全透明 / ScreenGui 根图层判定（大图、背景、赞助码不参与）
-    local function IsDecorative(Object)
-        local S = SafeGet(Object, "AbsoluteSize")
-        if S and type(S) == "table" or (S and type(S) == "userdata") then
-            local W, H = S.X, S.Y
-            if type(W) == "number" and type(H) == "number" then
-                if W == 0 and H == 0 then return true end   -- 尺寸未就绪，下轮再判
-                if math.max(W, H) > (M.IconMaxSize or 128) then return true end
-            end
-        end
-        if M.SkipGuiRootImages and Object.Parent == SafeGet(Library, "ScreenGui") then
-            return true
-        end
-        local T = IsImageObject(Object)
-            and SafeGet(Object, "ImageTransparency")
-            or  SafeGet(Object, "TextTransparency")
-        if T and T >= 0.99 then return true end
-        return false
-    end
-
-    -- ① 按图标 asset id 精确排除（最稳，不受布局影响）
-    local function MatchWindowIconId(Object)
-        local Img = SafeGet(Object, "Image")
-        if type(Img) ~= "string" or Img == "" then return false end
-        for _, Id in ipairs(M.WindowIconIds or {}) do
-            if string.find(Img, tostring(Id), 1, true) then return true end
-        end
-        return false
-    end
-
-    -- ② 按父级是 TitleHolder 兜底：该容器里有 UIListLayout + 窗口标题 TextLabel
-    local function IsTitleHolder(Parent)
-        if not Parent then return false end
-        local Cached = HolderCache[Parent]
-        if Cached ~= nil then return Cached end
-        local HasLayout, HasTitle = false, false
-        pcall(function()
-            for _, C in ipairs(Parent:GetChildren()) do
-                if C:IsA("UIListLayout") then HasLayout = true end
-                if C:IsA("TextLabel") and SafeGet(C, "Text") == M.WindowTitle then
-                    HasTitle = true
-                end
-            end
-        end)
-        local R = HasLayout and HasTitle
-        HolderCache[Parent] = R
-        return R
-    end
-
-    local function IsWindowIcon(Object)
-        if not M.ExcludeWindowIcon then return false end
-        if MatchWindowIconId(Object) then return true end
-        if IsTitleHolder(Object.Parent) then return true end
-        return false
-    end
-
-    -- ---------------------- 配色（照抄库的 4 关键点 sin + Lerp 结构） ----------------------
-    local Pal = {}
-
-    local function ReadAccent()
+    -- 取当前主题强调色（与边框 / 控件同一套雾蓝调和函数）
+    local function AccentColor()
         local Ok, C = pcall(function()
-            return Library.Scheme and Library.Scheme.AccentColor
+            local RGB = YXThemeAccentRGB(Library, true)
+            return Color3.new(RGB[1], RGB[2], RGB[3])
         end)
-        if Ok and typeof(C) == "Color3" then return C end
-        return FALLBACK_ACCENT
+        if Ok and C then return C end
+        local F = Library and Library.Scheme and Library.Scheme.AccentColor
+        return F or Color3.fromRGB(130, 200, 248)
     end
 
-    local function BuildPalette()
-        if M.UseLibraryPalette then
-            -- 库 Library.lua 318-320 行三个颜色常量，数值逐字节一致
-            Pal.Dark = Color3.fromRGB(0, 0, 0)         -- PureBlackColor
-            Pal.Main = Color3.fromRGB(148, 0, 211)     -- VioletColor
-            Pal.Lite = Color3.fromRGB(186, 85, 255)    -- SoftVioletColor
-            return
-        end
-        local A = ReadAccent()
-        local White = Color3.new(1, 1, 1)
-        local B = math.max(0, math.min(1, M.Brightness))
-        -- 库的 Black/Violet/SoftViolet 三档 → "亮彩 / 浅色 / 高光" 三档：
-        -- 全部由强调色向白 Lerp，最低档也带 B*0.26 提亮，不再压向纯黑/深蓝灰。
-        -- 三档亮度约 0.16 / 0.45 / 0.82，四关键点在其间摆动 = 明亮且仍有流动对比。
-        Pal.Main = A:Lerp(White, B * 0.26)                    -- 强调色主体（最饱和）
-        Pal.Dark = A:Lerp(White, B * 0.72)                    -- 浅色底（取代纯黑）
-        Pal.Lite = A:Lerp(White, math.min(B + 0.20, 0.92))   -- 高光（接近白但留色相）
+    local function MixWhite(C, T)
+        return Color3.new(C.R + (1 - C.R) * T,
+                          C.G + (1 - C.G) * T,
+                          C.B + (1 - C.B) * T)
     end
 
-    -- 库 MakeVioletBlackGradient / MakeVioletBlackSequence 原样结构：
-    --   c1 = Black:Lerp(Violet,      sin(t*2π)        ...)
-    --   c2 = SoftViolet:Lerp(Black,  sin(t*2π + 1.2)  ...)
-    --   c3 = Violet:Lerp(Black,      sin(t*2π + 2.4)  ...)
-    --   c4 = Black:Lerp(SoftViolet,  sin(t*2π + 3.6)  ...)
-    -- 相位步长 / 关键点位置 / 三色都改成上面的 M.* 参数，结构不变、每帧重建。
-    local TWO_PI = math.pi * 2
-    local function MakeGradient(Shift)
-        local t = Shift % 1
-        local P = M.PhaseStep
-        local S1 = (math.sin(t * TWO_PI)         + 1) * 0.5
-        local S2 = (math.sin(t * TWO_PI + P)     + 1) * 0.5
-        local S3 = (math.sin(t * TWO_PI + P * 2) + 1) * 0.5
-        local S4 = (math.sin(t * TWO_PI + P * 3) + 1) * 0.5
-        local D, V, L = Pal.Dark, Pal.Main, Pal.Lite
-        -- 夹一下，防止手改参数时关键点乱序导致整条渐变失效（pcall 会静默吞错，
-        -- 表现就是"又不流动了"）
-        local K2 = math.max(0.001, math.min(0.999, M.Key2))
-        local K3 = math.max(K2 + 0.001, math.min(0.999, M.Key3))
-        return ColorSequence.new({
-            ColorSequenceKeypoint.new(0,    D:Lerp(V, S1)),
-            ColorSequenceKeypoint.new(K2,   L:Lerp(D, S2)),
-            ColorSequenceKeypoint.new(K3,   V:Lerp(D, S3)),
-            ColorSequenceKeypoint.new(1,    D:Lerp(L, S4)),
+    -- 常态色 = 主题色提亮；高光色 = 更接近白。0 与 1 端点同色，扫过循环无接缝。
+    local function BuildSequence()
+        local Base = AccentColor()
+        local NewSig = string.format("%.4f,%.4f,%.4f", Base.R, Base.G, Base.B)
+        if Seq and NewSig == Sig then return Seq end
+        Sig = NewSig
+        local Edge = MixWhite(Base, Clamp(M.BaseWhite, 0, 1))
+        local Hi   = MixWhite(Base, Clamp(M.HighWhite, 0, 1))
+        local W    = Clamp(M.BandWidth, 0.05, 0.45)
+        local L    = 0.5 - W
+        local R    = 0.5 + W
+        Seq = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, Edge),
+            ColorSequenceKeypoint.new(L,    Edge),
+            ColorSequenceKeypoint.new(0.50, Hi),
+            ColorSequenceKeypoint.new(R,    Edge),
+            ColorSequenceKeypoint.new(1.00, Edge),
         })
+        return Seq
     end
 
-    -- ---------------------- 目标收集：所有标签页四要素 ----------------------
-    local function AddText(T)
-        if type(T) == "string" and T ~= "" then WantedText[T] = true end
-    end
-
-    -- 每次补扫重建：标签页可能运行时新增 / 改名，必须动态取，不能写死。
-    local function RebuildTargets()
-        -- （液态玻璃高光带已移除：流光不再设置 Transparency）
-        for K in pairs(WantedText) do WantedText[K] = nil end
-        for K in pairs(WantedInst) do WantedInst[K] = nil end
-        for K in pairs(TabTooltipText) do TabTooltipText[K] = nil end
-
-        -- ① 窗口 Title / Footer（固定文本，手填）
-        for K, V in pairs(M.WindowTexts or {}) do
-            if type(K) == "number" and type(V) == "string" then
-                AddText(V)                                 -- 数组写法 { "文本", ... }
-            elseif type(K) == "string" and V then
-                AddText(K)                                 -- 集合写法 ["文本"] = true
+    -- 定位库创建的 WindowTitle：MainFrame -> TopBar(48px) -> TitleHolder(水平 UIListLayout) -> TextLabel
+    local function FindTitleLabel()
+        if not (Library and Library.Window) then return nil end
+        local mf = Library.Window.MainFrame
+        if not (mf and mf.Parent) then return nil end
+        local Ok, Found = pcall(function()
+            local TopBar = nil
+            for _, C in ipairs(mf:GetChildren()) do
+                if C:IsA("Frame") and C.Size and C.Size.X and C.Size.Y
+                   and C.Size.Y.Offset == 48 and C.Size.X.Scale == 1 then
+                    TopBar = C; break
+                end
             end
-        end
+            if not TopBar then return nil end
+            local function BestIn(Node)
+                local Best, BestSize = nil, -1
+                for _, C in ipairs(Node:GetChildren()) do
+                    if C:IsA("TextLabel") and C.Visible ~= false
+                       and type(C.Text) == "string" and #C.Text > 1 then
+                        local Sz = tonumber(C.TextSize) or 0
+                        if Sz > BestSize then Best, BestSize = C, Sz end
+                    end
+                end
+                return Best
+            end
+            for _, C in ipairs(TopBar:GetChildren()) do
+                if C:IsA("Frame") and C.FindFirstChildOfClass
+                   and C:FindFirstChildOfClass("UIListLayout") then
+                    local B = BestIn(C)
+                    if B then return B end
+                end
+            end
+            -- 回退：TopBar 整棵子树里 TextSize 最大的可见长文本 TextLabel
+            local Best, BestSize = nil, -1
+            for _, C in ipairs(TopBar:GetDescendants()) do
+                if C:IsA("TextLabel") and C.Visible ~= false
+                   and type(C.Text) == "string" and #C.Text > 1 then
+                    local Sz = tonumber(C.TextSize) or 0
+                    if Sz > BestSize then Best, BestSize = C, Sz end
+                end
+            end
+            return Best
+        end)
+        return (Ok and Found) or nil
+    end
 
-        if not M.AutoTabs then return end
-
-        -- ② 所有标签页：Library.Tabs 是字典（TabKey -> Tab），必须用 pairs
+    local function Attach(Label)
+        local G = Instance.new("UIGradient")
+        G.Name     = M.Name
+        G.Rotation = M.Rotation
+        G.Offset   = Vector2.new(0.5, 0)
+        G.Color    = BuildSequence()
+        G.Parent   = Label
+        -- 白基底 + 固定 Registry 登记：主题切换不再把文字色改回 FontColor
+        pcall(function() Label.TextColor3 = Color3.new(1, 1, 1) end)
         pcall(function()
-            for _, Tab in pairs(Library.Tabs or {}) do
-                if type(Tab) == "table" then
-                    if M.IncludeTabName then AddText(Tab.Name) end
-                    if M.IncludeTabDesc then AddText(Tab.Description) end
-                    if M.IncludeTabTooltip and type(Tab.Tooltip) == "string" then
-                        AddText(Tab.Tooltip)               -- 也进白名单（双保险）
-                        TabTooltipText[Tab.Tooltip] = true
-                    end
-                end
-            end
+            local Reg = Library.Registry and Library.Registry[Label]
+            if type(Reg) == "table" then Reg.TextColor3 = Color3.new(1, 1, 1) end
         end)
-
-        -- ③ 所有标签按钮：Library.TabButtons 是数组，每项含 .Label / .Icon
-        pcall(function()
-            for _, B in ipairs(Library.TabButtons or {}) do
-                if type(B) == "table" then
-                    if M.IncludeTabName and B.Label then
-                        WantedInst[B.Label] = true         -- Name 名称文字
-                        AddText(SafeGet(B.Label, "Text"))
-                    end
-                    if M.IncludeTabIcon and B.Icon then
-                        WantedInst[B.Icon] = true          -- Icon 图标实例
-                    end
-                end
-            end
-        end)
+        return G
     end
-
-    local function Eligible(Object)
-        if not M.Enabled or Seen[Object] then return false end
-        if NameBlocked(Object) then return false end
-
-        -- 父级链同判（避免装饰层容器下的东西被误挂）
-        local Parent, Depth = Object.Parent, 0
-        while Parent and Depth < 4 do
-            if NameBlocked(Parent) then return false end
-            Parent = Parent.Parent
-            Depth = Depth + 1
-        end
-
-        local IsText = IsTextObject(Object)
-        local IsIcon = IsImageObject(Object)
-        if not (IsText or IsIcon) then return false end
-
-        -- ① 全局 Tooltip 浮层（ZIndex=30）：单独放行，由 Tick 按内容决定亮灭
-        if IsTooltipLabel(Object) then
-            return M.IncludeTabTooltip and true or false
-        end
-
-        -- ② ★ 窗口 Icon 例外：优先级最高，流光不加
-        local IsFont = M.IncludeFontIcons and IsFontIcon(Object) or false
-        if (IsIcon or IsFont) and IsWindowIcon(Object) then return false end
-
-        -- ③ 精确实例：所有标签按钮的 Name 文字 / Icon 图标
-        if WantedInst[Object] then return true end
-
-        -- ④ ★ 本版新增：所有 Icon（图片图标 + lucide 字体图标）
-        --    窗口 Icon 已在 ② 排除；大图 / 背景 / 全透明由 IsDecorative 挡掉
-        if M.IncludeAllIcons and (IsIcon or IsFont) then
-            if IsDecorative(Object) then return false end
-            return true
-        end
-
-        -- ⑤ 文本白名单：内容区当前标签名 / 描述、窗口 Title / Footer、Tooltip 文案
-        if not IsText then return false end
-        local Tx = SafeGet(Object, "Text")
-        if type(Tx) ~= "string" or Tx == "" then return false end
-        if not WantedText[Tx] then return false end
-        local Tr = SafeGet(Object, "TextTransparency")
-        if Tr and Tr >= 0.99 then return false end          -- 全透明占位
-        return true
-    end
-
-    local function Attach(Object)
-        if not Eligible(Object) then return end
-        Seen[Object] = true
-
-        local Ok, Grad = pcall(function()
-            local G = Object:FindFirstChildOfClass("UIGradient")
-            if G then
-                -- 已有渐变：默认不动，避免与旧模块 SyncDynamicGradients 互相覆盖
-                if not M.TakeOverExisting then return nil end
-            else
-                G = Instance.new("UIGradient")
-                G.Name = "YXLibFlowGradient"
-                G.Rotation = 0
-                G.Parent = Object
-            end
-            return G
-        end)
-        if not Ok or not Grad then return end
-
-        Targets[Object] = Grad
-
-        local Tx = IsTextObject(Object) and SafeGet(Object, "Text") or nil
-        local HasFont = (Tx ~= nil and string.find(Tx, "<font", 1, true) ~= nil) or false
-        FontTag[Object] = HasFont
-
-        -- 白基底：挂上时一次性铺白（库每帧刷白的目的只是对抗主题色回流）。
-        --   含内联 <font color> 的富文本保留原色，跳过。
-        if M.WhiteBase and not (M.KeepRichTextColor and HasFont) then
-            pcall(function()
-                if IsImageObject(Object) then Object.ImageColor3 = WHITE
-                else Object.TextColor3 = WHITE end
-            end)
-            -- 事件驱动白基底：仅在主题色回流改写颜色时重设白，不再每帧遍历复核。
-            --   Tooltip 浮层由 Tick 按内容单独管理（非标签页提示要恢复主题色），不挂此监听。
-            if not IsTooltipLabel(Object) and not WhiteConns[Object] then
-                local Prop = IsImageObject(Object) and "ImageColor3" or "TextColor3"
-                local OkSig, Sig = pcall(function() return Object:GetPropertyChangedSignal(Prop) end)
-                if OkSig and Sig then
-                    local OkC, C = pcall(function()
-                        return Sig:Connect(function()
-                            if M.Enabled and Object[Prop] ~= WHITE then
-                                Object[Prop] = WHITE
-                            end
-                        end)
-                    end)
-                    if OkC and C then
-                        WhiteConns[Object] = C
-                        if Library and Library.GiveSignal then
-                            pcall(function() Library:GiveSignal(C) end)
-                        end
-                    end
-                end
-            end
-        end
-
-        -- 记录图标原色：白基底会把 ImageColor3/TextColor3 改白，卸载时恢复
-        if IsImageObject(Object) or (M.IncludeFontIcons and IsFontIcon(Object)) then
-            if IconOrigColor[Object] == nil then
-                IconOrigColor[Object] = IsImageObject(Object)
-                    and SafeGet(Object, "ImageColor3") or SafeGet(Object, "TextColor3")
-            end
-        end
-        -- 记下 Tooltip 浮层原本的文字色，显示非标签页提示时恢复
-        if IsTooltipLabel(Object) and OrigColor[Object] == nil then
-            OrigColor[Object] = SafeGet(Object, "TextColor3")
-        end
-    end
-
-    -- 白基底已改为事件驱动（Attach 里挂 GetPropertyChangedSignal），
-    --   主题色回流瞬间由监听回调重设白，不再需要每帧遍历复核。
-
-    -- ---------------------- 扫描范围 ----------------------
-    -- 主 ScreenGui + CoreGui 下所有以 "Obsidian" 开头的 ScreenGui
-    -- （下拉菜单 / 颜色选择器 / 对话框 / 通知等运行时新建的独立 ScreenGui 也能覆盖）
-    local function CollectRoots(Out)
-        local function Add(R)
-            if R and typeof(R) == "Instance" then
-                Out[#Out + 1] = R
-            end
-        end
-        Add(SafeGet(Library, "ScreenGui"))
-        Add(SafeGet(Library, "Floats"))
-        Add(SafeGet(Library, "KeybindFrame"))
-        local Ok, CoreGui = pcall(function() return game:GetService("CoreGui") end)
-        if Ok and CoreGui then
-            pcall(function()
-                for _, Child in ipairs(CoreGui:GetChildren()) do
-                    if Child:IsA("ScreenGui") and string.sub(Child.Name or "", 1, 8) == "Obsidian" then
-                        Add(Child)
-                    end
-                end
-            end)
-        end
-        return Out
-    end
-
-    local function Scan()
-        if Library.Unloaded then return end
-        RebuildTargets()                -- 标签页可能运行时新增，每次补扫重新收集
-        local Roots = CollectRoots({})
-        for _, Root in ipairs(Roots) do
-            if not BoundRoot[Root] then
-                BoundRoot[Root] = true
-                pcall(function()
-                    Library:GiveSignal(Root.DescendantAdded:Connect(function(Object)
-                        pcall(Attach, Object)
-                    end))
-                end)
-            end
-            pcall(function()
-                for _, Object in ipairs(Root:GetDescendants()) do
-                    pcall(Attach, Object)
-                end
-            end)
-            pcall(Attach, Root)
-        end
-    end
-
-    -- ---------------------- 每帧驱动（库同款：每帧重建 ColorSequence） ----------------------
-    -- WHITE 已在模块顶部统一定义（白基底恒等元），此处不再重复声明
 
     local function Tick(dt)
-        if Library.Unloaded or not M.Enabled then return end
+        if not M.Enabled then return end
+        local Now  = os.clock()
+        local Step = (type(dt) == "number" and dt > 0 and dt) or (Now - LastFrame)
+        if Step < 0 then Step = 0 end
+        if Step > 0.1 then Step = 0.1 end   -- 卡顿后不跳一大截
+        LastFrame = Now
+        Phase    = (Phase + Step * M.Speed) % 1
+        WriteAcc = WriteAcc + Step
+        ThemeAcc = ThemeAcc + Step
+        RetryAcc = RetryAcc + Step
 
-        ThemeAcc = ThemeAcc + dt
-        if ThemeAcc >= M.ThemeInterval then
+        -- 窗口重建 / 标题被销毁：清登记，按 RetryInterval 重新找
+        if not (IsAlive(TitleLabel) and IsAlive(Grad)) then
+            TitleLabel, Grad, Seq, Sig, AppliedSeq = nil, nil, nil, nil, nil
+            if RetryAcc < M.RetryInterval then return end
+            RetryAcc = 0
+            local Found = FindTitleLabel()
+            if not Found then return end
+            TitleLabel = Found
+            Grad = Attach(Found)
+            AppliedSeq = Seq
+            return
+        end
+
+        if WriteAcc < M.Interval then return end
+        WriteAcc = 0
+        -- 白基底守卫（库若在别处改回字体色，这里拉回）
+        pcall(function()
+            local C = TitleLabel.TextColor3
+            if not (C and C.R and C.R > 0.999 and C.G > 0.999 and C.B > 0.999) then
+                TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+            end
+        end)
+        -- 主题签名变化才重建色序列，平时零写入
+        if ThemeAcc >= M.ThemeCheckInterval then
             ThemeAcc = 0
-            pcall(BuildPalette)
-        end
-        ScanAcc = ScanAcc + dt
-        if ScanAcc >= M.ScanInterval then
-            ScanAcc = 0
-            pcall(Scan)
-        end
-
-        Acc = Acc + dt
-        -- 首帧强制执行（不等降频间隔），首帧立刻铺上流光，不闪
-        if not FirstFrame and M.Interval > 0 and Acc < M.Interval then return end
-        FirstFrame = false
-        Acc = 0
-
-        -- ★ 库的核心：每帧重新构造整个 ColorSequence，颜色本身在流动
-        local Clock = os.clock()
-        local Shift = Clock * M.Speed
-        -- 相位没推进够就不重建，省掉每帧 ~5 次表分配（肉眼无差，GC 压力大降）
-        if (LastSeqShift == nil) or (math.abs(Shift - LastSeqShift) >= SEQ_STEP) then
-            LastSeq = MakeGradient(Shift)
-            LastSeqShift = Shift
-        end
-        local Seq = LastSeq
-        local Off = Vector2.new((Clock * M.OffsetSpeed) % 2 - 1, 0)
-        local Rot = (M.Sway ~= 0) and (math.sin(Clock * M.SwaySpeed) * M.Sway) or 0
-
-        for Object, Grad in pairs(Targets) do
-            if Object.Parent == nil then
-                Targets[Object] = nil
-            else
-                pcall(function()
-                    -- ① Tooltip 浮层是全局单例：只在显示「标签页 Tooltip」时流光，
-                    --    其它控件的提示保持主题色，并恢复原始文字色。
-                    if M.OnlyTabTooltips and IsTooltipLabel(Object) then
-                        local Tx = SafeGet(Object, "Text")
-                        if not (type(Tx) == "string" and TabTooltipText[Tx]) then
-                            if Grad.Enabled then Grad.Enabled = false end
-                            if OrigColor[Object] ~= nil then
-                                Object.TextColor3 = OrigColor[Object]
-                            end
-                            return
-                        end
-                    end
-                    -- Tooltip 浮层显示「标签页提示」时需白基底才能正确流光；
-                    --   它全局只有一个实例，每帧写一次白基底开销可忽略
-                    --   （与「全部目标」每帧强刷白基底有本质区别）。
-                    if IsTooltipLabel(Object) then
-                        pcall(function() Object.TextColor3 = WHITE end)
-                    end
-                    -- ② 旧模块的 SyncDynamicGradients 每帧可能把复用的渐变
-                    --    Enabled 关掉，这里每帧最后写回 true，保证流光盖住它；
-                    --    只在它被改掉时才写，避免无谓的属性写。
-                    if not Grad.Enabled then Grad.Enabled = true end
-
-                    -- ③ 旋转 / 透明度：用脏标记（AppliedRot / AppliedTrans），
-                    --    值没变就跳过 Roblox 属性写。已去除液态玻璃高光带，
-                    --    旋转为常数（仅摆动项），流光渐变保持不透明。
-                    if AppliedRot[Grad] ~= Rot then
-                        Grad.Rotation = Rot; AppliedRot[Grad] = Rot
-                    end
-                    if AppliedTrans[Grad] ~= ZERO_TRANS then
-                        Grad.Transparency = ZERO_TRANS; AppliedTrans[Grad] = ZERO_TRANS
-                    end
-
-                    -- ④ 颜色流光 + 横向平移：流动效果本身，仅在 30fps 降频帧写
-                    Grad.Color  = Seq
-                    Grad.Offset = Off
-                    -- ⑤ 白基底由 Attach 里的事件监听负责（主题回流即重设白），
-                    --    本循环完全不再触碰 TextColor3 / ImageColor3。
-                end)
+            local S = BuildSequence()
+            if S ~= AppliedSeq then
+                AppliedSeq = S
+                pcall(function() Grad.Color = S end)
             end
         end
+        -- 流光位移：Offset.X 在 +0.5 ~ -0.5 间循环，亮带沿文字横向反复扫过
+        pcall(function() Grad.Offset = Vector2.new(0.5 - Phase, 0) end)
     end
 
-    -- ---------------------- 开关 ----------------------
     function M:Enable()
         M.Enabled = true
-        FirstFrame = true
-        pcall(BuildPalette)
-        pcall(Scan)
-        if not Started and Heartbeat then
-            Started = true
-            local Ok = pcall(function()
-                Conn = Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
-                Library:GiveSignal(Conn)   -- 交给库统一断开，卸载不残留
-            end)
-            if not Ok then Started = false end
+        if not Heartbeat or Conn then return self end
+        LastFrame = os.clock()
+        local Ok, C = pcall(function()
+            return Heartbeat:Connect(function(dt) pcall(Tick, dt) end)
+        end)
+        if Ok then Conn = C end
+        -- 立即接管一次，启动即生效；窗口尚未创建时交给心跳重试
+        local Found = FindTitleLabel()
+        if Found then
+            TitleLabel = Found
+            Grad = Attach(Found)
+            AppliedSeq = Seq
         end
-        pcall(Tick, 0)   -- 首帧立刻铺上，不等第一个 Interval
         return self
     end
 
     function M:Disable()
         M.Enabled = false
-        if Conn then
-            pcall(function() Conn:Disconnect() end)
-            Conn, Started = nil, false
-        end
-        for Object, Grad in pairs(Targets) do
+        if Conn then pcall(function() Conn:Disconnect() end); Conn = nil end
+        if TitleLabel then
             pcall(function()
-                if Grad.Name == "YXLibFlowGradient" then Grad:Destroy() end
+                local Reg = Library.Registry and Library.Registry[TitleLabel]
+                if type(Reg) == "table" then Reg.TextColor3 = "FontColor" end
+                local F = Library.Scheme and Library.Scheme.FontColor
+                if F then TitleLabel.TextColor3 = F end
             end)
-            Targets[Object] = nil
         end
-        -- 断开所有白基底事件监听
-        for Object, C in pairs(WhiteConns) do
-            pcall(function() C:Disconnect() end)
-            WhiteConns[Object] = nil
-        end
-        for K in pairs(Seen) do Seen[K] = nil end
-        for K in pairs(FontTag) do FontTag[K] = nil end
-        for K in pairs(WantedInst) do WantedInst[K] = nil end
-        for K in pairs(HolderCache) do HolderCache[K] = nil end
-        -- 恢复图标被白基底改掉的原色（Registry 不一定登记 ImageColor3）
-        for Object, C in pairs(IconOrigColor) do
-            if C ~= nil then
-                pcall(function()
-                    if IsImageObject(Object) then Object.ImageColor3 = C
-                    else Object.TextColor3 = C end
-                end)
-            end
-            IconOrigColor[Object] = nil
-        end
-        for Object, C in pairs(OrigColor) do
-            pcall(function() Object.TextColor3 = C end)
-            OrigColor[Object] = nil
-        end
-        pcall(function() Library:UpdateColorsUsingRegistry() end)
+        if Grad then pcall(function() Grad:Destroy() end) end
+        Conn, TitleLabel, Grad = nil, nil, nil
+        Seq, Sig, AppliedSeq = nil, nil, nil
         return self
     end
 
-    -- 运行时改配置（数值都对应上面的「库参数对照表」）
-    function M:SetSpeed(V)          -- 一键整体调速：颜色 / 平移 / 摆动按比例联动
-        if type(V) ~= "number" or V <= 0 then return self end
-        local R = V / 0.75
-        M.Speed       = V
-        M.OffsetSpeed = 0.75 * R
-        M.SwaySpeed   = 1.70 * R
-        return self
-    end
-    function M:SetBrightness(V)     -- 0=强调色原色（偏暗），1=接近纯白
-        if type(V) ~= "number" then return self end
-        M.Brightness = math.max(0, math.min(1, V))
-        pcall(BuildPalette)
-        return self
-    end
-    function M:SetPalette(UseLibrary)
-        M.UseLibraryPalette = UseLibrary and true or false
-        pcall(BuildPalette)
-        return self
-    end
-    function M:SetWindowTexts(T)    -- 运行时换窗口 Title / Footer
-        if type(T) ~= "table" then return self end
-        M.WindowTexts = T
-        pcall(RebuildTargets)
-        for K in pairs(Seen) do Seen[K] = nil end
-        pcall(Scan)
-        return self
-    end
-    M.SetTargets = M.SetWindowTexts   -- 兼容旧调用名
-
-    -- ===== 本版新增的运行时开关 =====
-    function M:SetAllIcons(V)           -- 所有图标流光 开/关
-        M.IncludeAllIcons = V and true or false
-        for K in pairs(Seen) do Seen[K] = nil end
-        pcall(Scan)
-        return self
-    end
-    function M:SetExcludeWindowIcon(V)  -- 窗口 Icon 排除 开/关
-        M.ExcludeWindowIcon = V and true or false
-        for K in pairs(HolderCache) do HolderCache[K] = nil end
-        for K in pairs(Seen) do Seen[K] = nil end
-        pcall(Scan)
+    function M:SetSpeed(V)
+        if type(V) == "number" then M.Speed = V end
         return self
     end
 
     return M
 end)(Library)
 
-YXLibTextFlow:Enable()
--- ============================================================================
+YXTitleFlow:Enable()
