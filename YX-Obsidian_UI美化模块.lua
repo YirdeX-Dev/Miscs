@@ -1,5 +1,4 @@
 --[[YirdeX制作 | 开源 | 适配Obsidian_UI美化模块 可以二改 ，请不要当卑鄙的盗用者]]
--- ----------------------------------------------------------------------------
 -- 【本版改动】
 --   ① 液态玻璃：保留窗口级（玻璃高光层 + 面板半透明，移植自新版库 Library.lua），
 --      并新增【图标级】玻璃高光 —— 每个图标的流光渐变叠加库 AddGlassSheen 的
@@ -1507,7 +1506,9 @@ end
 function DefaultThemeBackground:Enable()
     if self.Enabled then return self end
     assert(self.Library, "请先调用 SetLibrary(Library)")
-    assert(self.ThemeManager and type(self.ThemeManager.ApplyTheme) == "function", "请先调用 SetThemeManager(ThemeManager)")
+    -- ThemeManager 可选：内嵌进 Library.lua 后由外部主脚本单独加载，这里可能拿不到。
+    --   有则包装 ApplyTheme 实现「切主题自动回流背景/配色」，无则降级为仅启动套用背景。
+    local HasTM = (self.ThemeManager and type(self.ThemeManager.ApplyTheme) == "function") and true or false
 
     self:InstallCacheOptimizer()
     self:InstallBackgroundTracker()
@@ -1521,6 +1522,7 @@ function DefaultThemeBackground:Enable()
     if self.ApplyPalette then self:ApplyPaletteFor(Startup) end
     self:SaveSelection(Startup)
 
+    if HasTM then
     local Module = self
     local Original = self.ThemeManager.ApplyTheme
     self._OriginalApplyTheme = Original
@@ -1569,6 +1571,7 @@ function DefaultThemeBackground:Enable()
         end
 
         return table.unpack(Results, 1, Results.n)
+    end
     end
 
     self.Enabled = true
@@ -1679,7 +1682,9 @@ Bg:SetLibrary(Library):SetThemeManager(ThemeManager)
 --   不在「UI 设置」里再显示切换项。OnSelect 保持默认 nil（模块内部调用都有判空保护）。
 Bg:Enable()
 
-SaveManager:LoadAutoloadConfig()
+-- 自动配置加载为可选：独立版由主脚本传入 SaveManager 时执行；
+--   内嵌进 Library.lua 后无 SaveManager，跳过（自动配置由主脚本自行加载）。
+if SaveManager then pcall(function() SaveManager:LoadAutoloadConfig() end) end
 
 --    YXGradientBorder:Enable()          -- 窗口 + 标签页一起开（默认）
 --    YXGradientBorder:Disable()         -- 全部关闭
@@ -1761,6 +1766,9 @@ local YXGradientBorder = (function(Library)
     local winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
     local winConn, tabConn = nil, nil
     local winLast, tabLast, tabAngle, scanAcc = 0, 0, 0, 0
+    -- Color 写入脏标记：buildSequence 按主题色缓存，引用不变就跳过 Roblox 属性写，
+    --   避免每帧对全部标签/通知重写同一个 ColorSequence（仅旋转仍需每帧写动画）。
+    local winLastSeq, tabLastSeq, notifLastSeq = nil, nil, nil
     local manualSeq = nil
     local tabItems = {}   -- [目标对象] = {frame, corner, stroke, grad, kind, tab}
     local notifItems = {} -- [通知 Holder] = {frame, corner, stroke, grad}
@@ -1904,7 +1912,7 @@ local YXGradientBorder = (function(Library)
             winLast = now
             if not manualSeq then
                 local seq = buildSequence()
-                winGrad.Color = seq
+                if seq ~= winLastSeq then winGrad.Color = seq; winLastSeq = seq end
             end
             local rot = (winGrad.Rotation + M.Speed * dt) % 360
             winGrad.Rotation = rot
@@ -2001,9 +2009,11 @@ local YXGradientBorder = (function(Library)
             if scanAcc >= 0.2 then scanAcc = 0; syncTargets() end
 
             local activeTab = Library and Library.ActiveTab
+            local tabSeqChanged = (seq ~= tabLastSeq)
+            if tabSeqChanged then tabLastSeq = seq end
             for obj, item in pairs(tabItems) do
                 if item.frame and item.frame.Parent then
-                    item.grad.Color = seq
+                    if tabSeqChanged then item.grad.Color = seq end
                     item.grad.Rotation = tabAngle
                     if item.kind == "button" then
                         local active = (item.tab == activeTab)
@@ -2096,9 +2106,11 @@ local YXGradientBorder = (function(Library)
             notifAngle = (notifAngle + M.Notifs.Speed * dt) % 360
             notifScanAcc = notifScanAcc + dt
             if notifScanAcc >= 0.2 then notifScanAcc = 0; syncNotifs() end
+            local notifSeqChanged = (seq ~= notifLastSeq)
+            if notifSeqChanged then notifLastSeq = seq end
             for _, item in pairs(notifItems) do
                 if item.frame and item.frame.Parent then
-                    item.grad.Color = seq
+                    if notifSeqChanged then item.grad.Color = seq end
                     item.grad.Rotation = notifAngle
                 end
             end
@@ -2847,8 +2859,8 @@ local YXLibTextFlow = (function(Library)
     M.OffsetSpeed        = 0.75      -- ② 色带横向平移速度（库 0.28）
     M.SwaySpeed          = 1.70      -- ③ 摆动角速度（库 0.85）
     M.Sway               = 16        -- ④ 摆动幅度，单位度（库 16；0 = 不摆）
-    M.Interval           = 0         -- ⑤ 0 = 每帧，与库 RenderStepped 完全一致；
-                                     --    卡顿可改 1/60 或 1/30（只影响顺滑度，不影响速度）
+    M.Interval           = 1/30      -- ⑤ 流光动画降频到 30fps（人眼对流动无感，CPU 直接减半）；
+                                     --    主题/扫描累加器仍每帧跑，响应不受影响。改 0 = 每帧。
 
     -- ===== 波形（库 MakeVioletBlackGradient 的写死值，照搬为参数）=====
     M.PhaseStep          = 1.2       -- ⑥ 相位步长：0 / 1.2 / 2.4 / 3.6
@@ -2930,6 +2942,9 @@ local YXLibTextFlow = (function(Library)
     local TabTooltipText = {}                              -- 所有标签 Tooltip 文本
     local IconSet        = setmetatable({}, { __mode = "k" })  -- 图标目标（走玻璃参数）
     local IconOrigColor  = setmetatable({}, { __mode = "k" })  -- 图标原始色，卸载时恢复
+    -- 白基底事件驱动：每个流光目标挂一个颜色变化监听，主题色回流瞬间立即重设白。
+    --   彻底取代旧版「每帧遍历全部目标读色+比较」的 AssertWhiteBase，平时零开销。
+    local WhiteConns     = setmetatable({}, { __mode = "k" })  -- [GuiObject] = RBXScriptConnection
     local HolderCache    = setmetatable({}, { __mode = "k" })  -- [Parent] = 是否 TitleHolder
     local GLASS_TRANS, CLEAR_TRANS = nil, nil
 
@@ -3230,15 +3245,33 @@ local YXLibTextFlow = (function(Library)
         FontTag[Object] = HasFont
 
         -- 白基底：挂上时一次性铺白（库每帧刷白的目的只是对抗主题色回流）。
-        --   不再每帧刷白（见下方 Tick）：改为挂上时铺一次 + 主题切换时由
-        --   AssertWhiteBase 补刷，省掉每帧对全部目标写 TextColor3/ImageColor3
-        --   的巨额开销（这是本模块最重的每帧写入）。含内联 <font color> 的
-        --   富文本保留原色，跳过。
+        --   含内联 <font color> 的富文本保留原色，跳过。
         if M.WhiteBase and not (M.KeepRichTextColor and HasFont) then
             pcall(function()
                 if IsImageObject(Object) then Object.ImageColor3 = WHITE
                 else Object.TextColor3 = WHITE end
             end)
+            -- 事件驱动白基底：仅在主题色回流改写颜色时重设白，不再每帧遍历复核。
+            --   Tooltip 浮层由 Tick 按内容单独管理（非标签页提示要恢复主题色），不挂此监听。
+            if not IsTooltipLabel(Object) and not WhiteConns[Object] then
+                local Prop = IsImageObject(Object) and "ImageColor3" or "TextColor3"
+                local OkSig, Sig = pcall(function() return Object:GetPropertyChangedSignal(Prop) end)
+                if OkSig and Sig then
+                    local OkC, C = pcall(function()
+                        return Sig:Connect(function()
+                            if M.Enabled and Object[Prop] ~= WHITE then
+                                Object[Prop] = WHITE
+                            end
+                        end)
+                    end)
+                    if OkC and C then
+                        WhiteConns[Object] = C
+                        if Library and Library.GiveSignal then
+                            pcall(function() Library:GiveSignal(C) end)
+                        end
+                    end
+                end
+            end
         end
 
         -- 记录图标目标：Tick 里要走「液态玻璃高光」分支，卸载时恢复原始颜色
@@ -3255,26 +3288,8 @@ local YXLibTextFlow = (function(Library)
         end
     end
 
-    -- 主题切换 / 库 UpdateColorsUsingRegistry 会把流光目标的颜色刷回主题色，
-    --   这里只在「已经偏离白色」时才写回白（带 ~= 判断），平时零写入。
-    --   挂在 Scan（补扫）与 BuildPalette（主题重取）里周期性调用即可，
-    --   替代原本每帧对全部目标强刷白基底的昂贵写法。
-    local function AssertWhiteBase()
-        if not M.WhiteBase then return end
-        for Object in pairs(Targets) do
-            pcall(function()
-                -- Tooltip 浮层由 Tick 每帧管理（显示标签页提示才刷白），这里跳过，
-                --   否则会把「其它控件的提示」也误刷成白，破坏原色恢复逻辑。
-                if IsTooltipLabel(Object) then return end
-                if M.KeepRichTextColor and FontTag[Object] then return end
-                if IsImageObject(Object) then
-                    if Object.ImageColor3 ~= WHITE then Object.ImageColor3 = WHITE end
-                else
-                    if Object.TextColor3 ~= WHITE then Object.TextColor3 = WHITE end
-                end
-            end)
-        end
-    end
+    -- 白基底已改为事件驱动（Attach 里挂 GetPropertyChangedSignal），
+    --   主题色回流瞬间由监听回调重设白，不再需要每帧遍历复核。
 
     -- ---------------------- 扫描范围 ----------------------
     -- 主 ScreenGui + CoreGui 下所有以 "Obsidian" 开头的 ScreenGui
@@ -3408,19 +3423,14 @@ local YXLibTextFlow = (function(Library)
                         Grad.Transparency = nTrans; AppliedTrans[Grad] = nTrans
                     end
 
-                    -- ④ 颜色流光 + 横向平移：每帧必写（这是流动效果本身）
+                    -- ④ 颜色流光 + 横向平移：流动效果本身，仅在 30fps 降频帧写
                     Grad.Color  = Seq
                     Grad.Offset = Off
-                    -- ⑤ 白基底已移到「挂上时(Attach)」由下方 AssertWhiteBase 每帧
-                    --    复核：只「读 + 偏离才写」，平时零写入，省掉原每帧对全部
-                    --    目标强刷 TextColor3 / ImageColor3 的巨额开销（原性能瓶颈）。
+                    -- ⑤ 白基底由 Attach 里的事件监听负责（主题回流即重设白），
+                    --    本循环完全不再触碰 TextColor3 / ImageColor3。
                 end)
             end
         end
-
-        -- 白基底复核：每帧只读取各目标颜色，仅在被主题色回流时写回白。
-        --   Tooltip 浮层由上面分支管理，这里跳过（避免误刷其它控件提示）。
-        AssertWhiteBase()
     end
 
     -- ---------------------- 开关 ----------------------
@@ -3452,6 +3462,11 @@ local YXLibTextFlow = (function(Library)
                 if Grad.Name == "YXLibFlowGradient" then Grad:Destroy() end
             end)
             Targets[Object] = nil
+        end
+        -- 断开所有白基底事件监听
+        for Object, C in pairs(WhiteConns) do
+            pcall(function() C:Disconnect() end)
+            WhiteConns[Object] = nil
         end
         for K in pairs(Seen) do Seen[K] = nil end
         for K in pairs(FontTag) do FontTag[K] = nil end
