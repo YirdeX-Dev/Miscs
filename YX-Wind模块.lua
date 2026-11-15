@@ -306,7 +306,8 @@ do
             if btn.BackgroundColor3 ~= p.openBtnBg then
                 btn.BackgroundColor3 = p.openBtnBg
             end
-            if label and label.TextColor3 ~= p.openBtnText then
+            -- YX 流光文字（打开按钮 Title）由模块 9 接管，跳过主题色，避免破坏白基底
+            if label and not label:GetAttribute("YXFlowText") and label.TextColor3 ~= p.openBtnText then
                 label.TextColor3 = p.openBtnText
             end
             if grad then
@@ -371,6 +372,8 @@ do
     }
 
     local function applyThemeText(inst, target)
+        -- YX 流光文字（Title / Author / 打开按钮 Title）由模块 9 接管，跳过主题色与渐变禁用
+        if inst:GetAttribute("YXFlowText") then return end
         if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then
             return
         end
@@ -587,3 +590,147 @@ do
         end)
     end
 end
+
+-- ==========================================
+-- 9. 标题 / 署名 / 打开按钮 Title 青白流光渐变
+--    仿 Obsidian 库 MakeVioletBlackGradient 原理：每帧重建 ColorSequence，
+--    一道白色高光带沿文字左右循环扫过，主色青色。
+-- ==========================================
+do
+    local RunService = game:GetService("RunService")
+
+    local FLOW_ATTR = "YXFlowText"        -- 模块 3 / 5 据此跳过这三处文字
+    local GRAD_NAME = "YXTextFlow"
+
+    -- 配色：青 -> 白（仅这两色，不掺其它颜色）
+    local CYAN       = Color3.fromRGB(72, 219, 251)
+    local WHITE      = Color3.new(1, 1, 1)
+    local WHITE_BASE = Color3.new(1, 1, 1)   -- 文字白基底，让 UIGradient 原色完整呈现
+
+    local STEPS     = 12       -- 色序关键点分段数
+    local SPEED     = 0.35     -- 高光扫动速度（每秒循环圈数）
+    local SEQ_STEPS = 60       -- 相位量化档数（缓存，避免每帧分配）
+    local INTERVAL  = 1 / 30   -- 30fps 降频
+
+    -- 每帧重建的色序：高光带位置随 phase 平移，青为主、白为扫过的高光
+    local function buildSequence(phase)
+        local keys = {}
+        for i = 0, STEPS do
+            local x = i / STEPS
+            local s = math.sin((x - phase) * math.pi * 2)
+            local w = (s + 1) / 2
+            w = w * w                      -- 收窄白高光，使青色占主导
+            keys[i + 1] = ColorSequenceKeypoint.new(x, CYAN:Lerp(WHITE, w))
+        end
+        return ColorSequence.new(keys)
+    end
+
+    local seqCache = {}
+    local function getSequence(q)
+        local seq = seqCache[q]
+        if not seq then
+            seq = buildSequence(q / SEQ_STEPS)
+            seqCache[q] = seq
+        end
+        return seq
+    end
+
+    local flows = {}   -- [UIGradient] = TextLabel
+
+    local function attach(label)
+        if not label or label:GetAttribute(FLOW_ATTR) then return end
+        pcall(function() label:SetAttribute(FLOW_ATTR, true) end)
+
+        label.TextColor3       = WHITE_BASE
+        label.TextTransparency = 0
+
+        local grad = label:FindFirstChild(GRAD_NAME)
+        if not grad or not grad:IsA("UIGradient") then
+            grad = Instance.new("UIGradient")
+            grad.Name   = GRAD_NAME
+            grad.Parent = label
+        end
+        grad.Enabled  = true
+        grad.Rotation = 0
+        grad.Color    = getSequence(0)
+        flows[grad]   = label
+    end
+
+    -- 精确定位三处文字（路径与模块 7 / 3 一致），并带轻量兜底
+    local function collect()
+        local out = {}
+        local main     = Window.UIElements and Window.UIElements.Main
+        local mainMain = main     and main:FindFirstChild("Main")
+        local topbar   = mainMain and mainMain:FindFirstChild("Topbar")
+        local left     = topbar   and topbar:FindFirstChild("Left")
+        local box      = left     and left:FindFirstChild("Title")   -- 容器 Frame
+
+        if box then
+            for _, name in ipairs({"Title", "Author"}) do
+                local t = box:FindFirstChild(name)
+                if t and t:IsA("TextLabel") then out[#out + 1] = t end
+            end
+        else
+            -- 兜底：仅认「父级是 Title 容器」的 Title，及独一无二的 Author，避免误伤标签页
+            if main then
+                for _, d in ipairs(main:GetDescendants()) do
+                    if d:IsA("TextLabel") and
+                       (d.Name == "Author" or (d.Name == "Title" and d.Parent and d.Parent.Name == "Title")) then
+                        out[#out + 1] = d
+                    end
+                end
+            end
+        end
+
+        local btn = Window.OpenButtonMain and Window.OpenButtonMain.Button
+        if btn then
+            local t = btn:FindFirstChild("TextLabel", true)
+            if t and t:IsA("TextLabel") then out[#out + 1] = t end
+        end
+        return out
+    end
+
+    local function applyAll()
+        for _, label in ipairs(collect()) do
+            attach(label)
+        end
+    end
+
+    applyAll()
+
+    -- 低频兜底：捕获 SetAuthor 后补建、EditOpenButton 重设、对象被替换
+    task.spawn(function()
+        while task.wait(1.5) do
+            applyAll()
+        end
+    end)
+
+    -- 每帧推进相位；仅在量化档变化时写一次 Color（脏标记 + 30fps 降频）
+    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
+
+    RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        local dt  = now - last
+        last = now
+        acc  = acc + dt
+        if acc < INTERVAL then return end
+        local step = acc
+        acc = 0
+
+        phase = (phase + step * SPEED) % 1
+        local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
+        if q == lastQ then return end
+        lastQ = q
+
+        local seq = getSequence(q)
+        for grad in pairs(flows) do
+            if grad.Parent then
+                grad.Color = seq
+            else
+                flows[grad] = nil
+            end
+        end
+    end)
+end
+
+-- YX | 11月15日23时37分
