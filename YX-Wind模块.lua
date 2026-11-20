@@ -776,9 +776,10 @@ do
         last = now
         acc  = acc + dt
         if acc < INTERVAL then return end
+        local step = acc
         acc = 0
 
-        phase = (phase + dt * SPEED) % 1
+        phase = (phase + step * SPEED) % 1
         local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
         if q == lastQ then return end
         lastQ = q
