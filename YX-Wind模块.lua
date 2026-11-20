@@ -1,7 +1,6 @@
 --[[YirdeX制作 | 开源 | 适配Wind UI美化模块
 请不要当卑鄙的盗用者或者倒卖者]]
 
-
 -- YX-Theme.lua（链接版）
 -- 依赖：主脚本在加载本库之前必须写 _G.WindUI = WindUI
 -- 导出：9 个符号到 _G，供主脚本与美化模块使用
@@ -46,10 +45,7 @@ end
 local savedTheme = ThemeMemory.load() or "芙宁娜"
 
 local THEME_BACKGROUNDS = {
-    ["芙宁娜"] = {
-        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E7%94%98%E9%9B%A8%20%E5%8E%9F%E7%A5%9E%204K%20%E9%AB%98%E6%B8%85%E5%A3%81%E7%BA%B8.jpg",
-        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E5%85%AB%E9%87%8D%E7%A5%9E%E5%AD%90%E6%A8%B1%E8%8A%B14K%E5%A3%81%E7%BA%B8.jpg",
-    },
+    -- 无背景图：已按需求清空所有壁纸
 }
 
 local pickedWallpaper = {}
@@ -88,30 +84,30 @@ local onUserCardClick = function() end
 WindUI:AddTheme({
     Name = "芙宁娜",
     Accent = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#DD5B72"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#00E5FF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#00B0FF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#2979FF"), Transparency = 0 },
     }, { Rotation = 45 }),
-    Dialog = Color3.fromHex("#FDF0F2"),
-    Outline = Color3.fromHex("#EA788C"),
-    Text = Color3.fromHex("#5C3444"),
+    Dialog = Color3.fromHex("#0D2438"),
+    Outline = Color3.fromHex("#448AFF"),
+    Text = Color3.fromHex("#FFFFFF"),
     Placeholder = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#F5D6E1"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#80D8FF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#B3E5FC"), Transparency = 0 },
     }, { Rotation = 0 }),
     Background = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#FDF0F2"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#F5D6E1"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#0A1929"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#0D2137"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#10293F"), Transparency = 0 },
     }, { Rotation = 90 }),
     Button = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#F8C5CF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
+        ["0"]   = { Color = Color3.fromHex("#448AFF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#0D47A1"), Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#FF4081"), Transparency = 0 }, 
-        ["50"]  = { Color = Color3.fromHex("#FF80AB"), Transparency = 0 }, 
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+        ["0"]   = { Color = Color3.fromHex("#00FFFF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#E0FFFF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
     }, { Rotation = 135 }),
 })
 
@@ -1040,4 +1036,4 @@ do
     end
 end
 
--- YX-WindUI 主题库（仅芙宁娜主题 + 双壁纸轮换）+ 美化模块 融合版 生成时间：11月20日19时22分
+-- YX-WindUI 主题库（深蓝科技风 / 无背景图）+ 美化模块 融合版 生成时间：11月20日19时33分
