@@ -685,16 +685,18 @@ do
     local SEQ_STEPS = 60
     local INTERVAL  = 1 / 30
 
-    -- 每帧重建色序：一道高光沿边框流动（青→白→青），Rotation 固定 0，不旋转方向
+    -- 每帧重建色序：一道高光沿边框流动（深青蓝底→白光带），Rotation 固定 0，不旋转方向
     local function flowSequence(p, phase)
-        local a, b = p.waveA, p.waveB
+        local base = p.waveA
+        local hi   = p.waveB
+        -- 暗部：把青色压暗成深青蓝，与白光带拉开强烈对比（不改主题配色表，仅此处派生）
+        local dark = Color3.new(base.R * 0.15, base.G * 0.20, base.B * 0.26)
         local keys = {}
-        for i = 0, 12 do
-            local x = i / 12
-            local s = math.sin((x - phase) * math.pi * 2)
-            local w = (s + 1) / 2
-            w = w * w
-            keys[i + 1] = ColorSequenceKeypoint.new(x, a:Lerp(b, w))
+        for i = 0, 24 do
+            local x = i / 24
+            local w = (math.sin((x - phase) * math.pi * 2) + 1) / 2
+            w = w ^ 1.3
+            keys[i + 1] = ColorSequenceKeypoint.new(x, dark:Lerp(hi, w))
         end
         return ColorSequence.new(keys)
     end
@@ -1236,5 +1238,3 @@ do
         end
     end)
 end
-
--- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页边框颜色流动渐变/Rotation恒0）+ 美化模块 融合版 生成时间：11月20日21时42分
