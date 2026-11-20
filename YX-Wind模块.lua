@@ -772,7 +772,7 @@ do
 
         if stroke then
             local Speed = 120
-            local baseThickness = stroke.Thickness
+            local baseThickness = 4
             task.spawn(function()
                 local rot = 0
                 while btn.Parent do
@@ -1036,4 +1036,4 @@ do
     end
 end
 
--- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框）+ 美化模块 融合版 生成时间：11月20日19时40分
+-- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4）+ 美化模块 融合版 生成时间：11月20日20时12分
