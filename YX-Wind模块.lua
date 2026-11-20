@@ -720,6 +720,7 @@ end
 
 -- ==========================================
 -- 2. 标签页边框模块（颜色流动渐变：高光带沿边框流动，Rotation 恒 0、不旋转）
+--    色序缓存按配色签名隔离 + 切主题强制刷新：修复切黑曜时闪回芙宁娜青白的残留问题
 -- ==========================================
 do
     local RunService = game:GetService("RunService")
@@ -794,25 +795,29 @@ do
 
     scan()
 
-    -- 主题切换时更新渐变配色
+    -- 每帧重建色序推进流动（降频 30fps + 色序缓存，Rotation 恒为 0 不旋转）
+    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
+    local seqCache = {}
+
+    -- 缓存 key 带配色签名：切主题后 waveA/waveB 变化，旧色序自动失效并重建（同模块9修法）
+    local function getSequence(p, q)
+        local key = YXTheme.colorToHex(p.waveA) .. "|" .. YXTheme.colorToHex(p.waveB) .. "|" .. q
+        local seq = seqCache[key]
+        if not seq then
+            seq = flowSequence(p, q / SEQ_STEPS)
+            seqCache[key] = seq
+        end
+        return seq
+    end
+
+    -- 主题切换时立即刷新，并重置 lastQ 强制心跳下一帧用新配色（避免被 q==lastQ 节流跳过）
     YXTheme.onChange(function()
         local seq = flowSequence(YXTheme.getPalette(), 0)
         for border, grad in pairs(borders) do
             if grad.Parent then grad.Color = seq end
         end
+        lastQ = -1
     end)
-
-    -- 每帧重建色序推进流动（降频 30fps + 色序缓存，Rotation 恒为 0 不旋转）
-    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
-    local seqCache = {}
-    local function getSequence(p, q)
-        local seq = seqCache[q]
-        if not seq then
-            seq = flowSequence(p, q / SEQ_STEPS)
-            seqCache[q] = seq
-        end
-        return seq
-    end
 
     RunService.Heartbeat:Connect(function()
         scan()
@@ -1293,4 +1298,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风芙宁娜 + 黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 标签页颜色流动不旋转）+ 美化模块 融合版 生成时间：11月21日00时17分（本次：黑曜下流动类模块统一黑白——模块2标签页边框 waveA/waveB 改为白#FFFFFF+黑#000000，与模块9文字流光一致；芙宁娜不动、静态渐变模块仍用冷灰、其余模块未改）
+-- YX-WindUI 主题库（深蓝科技风芙宁娜 + 黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 标签页颜色流动不旋转）+ 美化模块 融合版 生成时间：11月21日00时36分（本次：修复模块2标签页边框切主题残留——色序缓存key加入waveA/waveB配色签名、切主题重置lastQ强制刷新，不再闪回芙宁娜青白；其余模块与配色未改）
