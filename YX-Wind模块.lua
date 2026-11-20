@@ -674,11 +674,23 @@ do
 end
 
 -- ==========================================
--- 2. 标签页边框模块
+-- 2. 标签页边框模块（青蓝→白 渐变流光）
 -- ==========================================
 do
     local RunService = game:GetService("RunService")
     local borders = {}
+
+    local GRAD_NAME = "TabBtnFlow"
+    local SPEED = 90
+
+    -- 青蓝→白→青蓝 的渐变色序，随标签主题色动态更新
+    local function flowSequence(p)
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   p.waveA),
+            ColorSequenceKeypoint.new(0.5, p.waveB),
+            ColorSequenceKeypoint.new(1,   p.waveA),
+        })
+    end
 
     local function addBorder(tabBtn)
         if not tabBtn or tabBtn:FindFirstChild("TabBtnBorder") then return end
@@ -700,9 +712,19 @@ do
         stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         stroke.Thickness = 1.5
         stroke.Transparency = 0.1
+        stroke.Color = Color3.new(1, 1, 1)
         stroke.Parent = border
 
-        borders[border] = stroke
+        local grad = stroke:FindFirstChild(GRAD_NAME)
+        if not grad or not grad:IsA("UIGradient") then
+            grad = Instance.new("UIGradient")
+            grad.Name = GRAD_NAME
+            grad.Parent = stroke
+        end
+        grad.Enabled = true
+        grad.Color = flowSequence(YXTheme.getPalette())
+
+        borders[border] = grad
     end
 
     local known = {}
@@ -719,16 +741,25 @@ do
 
     scan()
 
+    -- 主题切换时更新渐变配色
+    YXTheme.onChange(function()
+        local seq = flowSequence(YXTheme.getPalette())
+        for grad in pairs(borders) do
+            if grad.Parent then grad.Color = seq end
+        end
+    end)
+
+    local last = os.clock()
     RunService.Heartbeat:Connect(function()
         scan()
-        local p = YXTheme.getPalette()
-        local wave = (math.sin(os.clock() * 2) + 1) / 2
-        local color = p.waveA:Lerp(p.waveB, wave)
-        for border, stroke in pairs(borders) do
-            if border.Parent then
-                stroke.Color = color
+        local now = os.clock()
+        local dt = now - last
+        last = now
+        for grad in pairs(borders) do
+            if grad.Parent then
+                grad.Rotation = (grad.Rotation + SPEED * dt) % 360
             else
-                borders[border] = nil
+                borders[grad] = nil
             end
         end
     end)
@@ -754,7 +785,7 @@ do
             if btn.BackgroundColor3 ~= p.openBtnBg then
                 btn.BackgroundColor3 = p.openBtnBg
             end
-            if label and label.TextColor3 ~= p.openBtnText then
+            if label and not label:GetAttribute("YXFlowText") and label.TextColor3 ~= p.openBtnText then
                 label.TextColor3 = p.openBtnText
             end
             if grad then
@@ -822,6 +853,9 @@ do
         if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then
             return
         end
+
+        -- 流光文字（Title/Author/打开按钮 Title）由模块 9 接管，跳过主题色与渐变禁用
+        if inst:GetAttribute("YXFlowText") then return end
 
         target = target or YXTheme.getTextColor()
 
@@ -1036,4 +1070,140 @@ do
     end
 end
 
--- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4）+ 美化模块 融合版 生成时间：11月20日20时12分
+-- ==========================================
+-- 9. 标题 / 署名 / 打开按钮 Title 青白流光渐变
+--    每帧重建 ColorSequence，一道白色高光带沿文字循环扫过，主色青色。
+--    模块 3 / 5 通过 YXFlowText 属性跳过这三处文字。
+-- ==========================================
+do
+    local RunService = game:GetService("RunService")
+
+    local FLOW_ATTR = "YXFlowText"
+    local GRAD_NAME = "YXTextFlow"
+
+    local CYAN       = Color3.fromRGB(72, 219, 251)
+    local WHITE      = Color3.new(1, 1, 1)
+    local WHITE_BASE = Color3.new(1, 1, 1)
+
+    local STEPS     = 12
+    local SPEED     = 0.35
+    local SEQ_STEPS = 60
+    local INTERVAL  = 1 / 30
+
+    local function buildSequence(phase)
+        local keys = {}
+        for i = 0, STEPS do
+            local x = i / STEPS
+            local s = math.sin((x - phase) * math.pi * 2)
+            local w = (s + 1) / 2
+            w = w * w
+            keys[i + 1] = ColorSequenceKeypoint.new(x, CYAN:Lerp(WHITE, w))
+        end
+        return ColorSequence.new(keys)
+    end
+
+    local seqCache = {}
+    local function getSequence(q)
+        local seq = seqCache[q]
+        if not seq then
+            seq = buildSequence(q / SEQ_STEPS)
+            seqCache[q] = seq
+        end
+        return seq
+    end
+
+    local flows = {}
+
+    local function attach(label)
+        if not label or label:GetAttribute(FLOW_ATTR) then return end
+        pcall(function() label:SetAttribute(FLOW_ATTR, true) end)
+
+        label.TextColor3       = WHITE_BASE
+        label.TextTransparency = 0
+
+        local grad = label:FindFirstChild(GRAD_NAME)
+        if not grad or not grad:IsA("UIGradient") then
+            grad = Instance.new("UIGradient")
+            grad.Name   = GRAD_NAME
+            grad.Parent = label
+        end
+        grad.Enabled  = true
+        grad.Rotation = 0
+        grad.Color    = getSequence(0)
+        flows[grad]   = label
+    end
+
+    local function collect()
+        local out = {}
+        local main     = Window.UIElements and Window.UIElements.Main
+        local mainMain = main     and main:FindFirstChild("Main")
+        local topbar   = mainMain and mainMain:FindFirstChild("Topbar")
+        local left     = topbar   and topbar:FindFirstChild("Left")
+        local box      = left     and left:FindFirstChild("Title")
+
+        if box then
+            for _, name in ipairs({"Title", "Author"}) do
+                local t = box:FindFirstChild(name)
+                if t and t:IsA("TextLabel") then out[#out + 1] = t end
+            end
+        else
+            if main then
+                for _, d in ipairs(main:GetDescendants()) do
+                    if d:IsA("TextLabel") and
+                       (d.Name == "Author" or (d.Name == "Title" and d.Parent and d.Parent.Name == "Title")) then
+                        out[#out + 1] = d
+                    end
+                end
+            end
+        end
+
+        local btn = Window.OpenButtonMain and Window.OpenButtonMain.Button
+        if btn then
+            local t = btn:FindFirstChild("TextLabel", true)
+            if t and t:IsA("TextLabel") then out[#out + 1] = t end
+        end
+        return out
+    end
+
+    local function applyAll()
+        for _, label in ipairs(collect()) do
+            attach(label)
+        end
+    end
+
+    applyAll()
+
+    task.spawn(function()
+        while task.wait(1.5) do
+            applyAll()
+        end
+    end)
+
+    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
+
+    RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        local dt  = now - last
+        last = now
+        acc  = acc + dt
+        if acc < INTERVAL then return end
+        local step = acc
+        acc = 0
+
+        phase = (phase + step * SPEED) % 1
+        local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
+        if q == lastQ then return end
+        lastQ = q
+
+        local seq = getSequence(q)
+        for grad in pairs(flows) do
+            if grad.Parent then
+                grad.Color = seq
+            else
+                flows[grad] = nil
+            end
+        end
+    end)
+end
+
+-- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流光）+ 美化模块 融合版 生成时间：11月20日21时07分
