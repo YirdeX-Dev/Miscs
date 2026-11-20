@@ -298,6 +298,7 @@ local YXTheme = (function()
             tagA = Color3.fromHex("#00E5FF"), tagMid = Color3.fromHex("#2979FF"), tagB = Color3.fromHex("#00E5FF"),
             openBtnBg = Color3.fromHex("#0D2438"),
             btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#2979FF"),
+            textFlowA = Color3.fromRGB(72, 219, 251), textFlowB = Color3.fromHex("#FFFFFF"),
         },
         ["黑曜"] = {
             waveA = Color3.fromHex("#9AA0A6"), waveB = Color3.fromHex("#E8EAED"),
@@ -305,6 +306,7 @@ local YXTheme = (function()
             tagA = Color3.fromHex("#B8BDC2"), tagMid = Color3.fromHex("#5F6368"), tagB = Color3.fromHex("#9AA0A6"),
             openBtnBg = Color3.fromHex("#1A1C20"),
             btnGradA = Color3.fromHex("#9AA0A6"), btnGradB = Color3.fromHex("#3C4043"),
+            textFlowA = Color3.fromHex("#FFFFFF"), textFlowB = Color3.fromHex("#000000"),
         },
     }
     local paletteCache = {}
@@ -337,6 +339,7 @@ local YXTheme = (function()
                 tagA = main:Lerp(white, 0.5), tagMid = main, tagB = main:Lerp(white, 0.5),
                 openBtnBg = white,
                 btnGradA = white, btnGradB = main,
+                textFlowA = main, textFlowB = white,
             }
         end
 
@@ -1143,8 +1146,9 @@ do
 end
 
 -- ==========================================
--- 9. 标题 / 署名 / 打开按钮 Title 青白流光渐变
---    每帧重建 ColorSequence，一道白色高光带沿文字循环扫过，主色青色。
+-- 9. 标题 / 署名 / 打开按钮 Title 文字流光渐变（跟随主题配色）
+--    每帧重建 ColorSequence，一道高光带沿文字循环扫过，Rotation 恒 0 不旋转。
+--    配色取自 PALETTES.textFlowA/textFlowB：芙宁娜=青→白，黑曜=白→黑。
 --    模块 3 / 5 通过 YXFlowText 属性跳过这三处文字。
 -- ==========================================
 do
@@ -1162,24 +1166,29 @@ do
     local SEQ_STEPS = 60
     local INTERVAL  = 1 / 30
 
-    local function buildSequence(phase)
+    local function buildSequence(phase, a, b)
         local keys = {}
         for i = 0, STEPS do
             local x = i / STEPS
             local s = math.sin((x - phase) * math.pi * 2)
             local w = (s + 1) / 2
             w = w * w
-            keys[i + 1] = ColorSequenceKeypoint.new(x, CYAN:Lerp(WHITE, w))
+            keys[i + 1] = ColorSequenceKeypoint.new(x, a:Lerp(b, w))
         end
         return ColorSequence.new(keys)
     end
 
+    -- 颜色签名进缓存 key：切换主题后配色变化，旧序列自动失效并重建
     local seqCache = {}
     local function getSequence(q)
-        local seq = seqCache[q]
+        local p = YXTheme.getPalette()
+        local a = p.textFlowA or CYAN
+        local b = p.textFlowB or WHITE
+        local key = YXTheme.colorToHex(a) .. "|" .. YXTheme.colorToHex(b) .. "|" .. q
+        local seq = seqCache[key]
         if not seq then
-            seq = buildSequence(q / SEQ_STEPS)
-            seqCache[q] = seq
+            seq = buildSequence(q / SEQ_STEPS, a, b)
+            seqCache[key] = seq
         end
         return seq
     end
@@ -1253,6 +1262,11 @@ do
 
     local phase, acc, lastQ, last = 0, 0, -1, os.clock()
 
+    -- 主题切换后强制刷新一次流光色序（否则 q 不变时会被节流跳过，看不到换色）
+    YXTheme.onChange(function()
+        lastQ = -1
+    end)
+
     RunService.Heartbeat:Connect(function()
         local now = os.clock()
         local dt  = now - last
@@ -1278,4 +1292,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风芙宁娜 + 新增黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日23时56分（黑曜PALETTES写死冷灰配色/切主题美化模块跟随变色/其他主题未动）
+-- YX-WindUI 主题库（深蓝科技风芙宁娜 + 黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 标签页颜色流动不旋转）+ 美化模块 融合版 生成时间：11月21日00时09分（本次仅改模块9文字流光：配色改从PALETTES.textFlowA/textFlowB读取，芙宁娜=青→白、黑曜=白→黑，切主题自动刷新；其余模块与配色未动）
