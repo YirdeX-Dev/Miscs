@@ -674,29 +674,23 @@ do
 end
 
 -- ==========================================
--- 2. 标签页边框模块（青蓝→白 渐变流光）
+-- 2. 标签页边框模块（复用打开按钮/窗口边框那套现成流光：三色序 + Rotation 旋转）
 -- ==========================================
 do
     local RunService = game:GetService("RunService")
     local borders = {}
 
     local GRAD_NAME = "TabBtnFlow"
-    local SPEED     = 0.35
-    local SEQ_STEPS = 60
-    local INTERVAL  = 1 / 30
+    local Speed = 120
+    local last = os.clock()
 
-    -- 每帧重建色序：一道高光沿边框流动（青→白→青），Rotation 固定 0，不旋转方向
-    local function flowSequence(p, phase)
-        local a, b = p.waveA, p.waveB
-        local keys = {}
-        for i = 0, 12 do
-            local x = i / 12
-            local s = math.sin((x - phase) * math.pi * 2)
-            local w = (s + 1) / 2
-            w = w * w
-            keys[i + 1] = ColorSequenceKeypoint.new(x, a:Lerp(b, w))
-        end
-        return ColorSequence.new(keys)
+    -- 与窗口边框/打开按钮完全一致的渐变色序
+    local function flowSequence(p)
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   p.gradEdge),
+            ColorSequenceKeypoint.new(0.5, p.gradMid),
+            ColorSequenceKeypoint.new(1,   p.gradEdge),
+        })
     end
 
     local function addBorder(tabBtn)
@@ -728,9 +722,8 @@ do
             grad.Name = GRAD_NAME
             grad.Parent = stroke
         end
-        grad.Enabled  = true
-        grad.Rotation = 0
-        grad.Color    = flowSequence(YXTheme.getPalette(), 0)
+        grad.Enabled = true
+        grad.Color   = flowSequence(YXTheme.getPalette())
 
         borders[border] = grad
     end
@@ -751,43 +744,21 @@ do
 
     -- 主题切换时更新渐变配色
     YXTheme.onChange(function()
-        local seq = flowSequence(YXTheme.getPalette(), 0)
+        local seq = flowSequence(YXTheme.getPalette())
         for grad in pairs(borders) do
             if grad.Parent then grad.Color = seq end
         end
     end)
 
-    -- 每帧重建色序推进流动（降频 30fps + 色序缓存，Rotation 恒为 0 不旋转）
-    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
-    local seqCache = {}
-    local function getSequence(p, q)
-        local seq = seqCache[q]
-        if not seq then
-            seq = flowSequence(p, q / SEQ_STEPS)
-            seqCache[q] = seq
-        end
-        return seq
-    end
-
+    -- 每帧旋转渐变方向（与窗口边框/打开按钮同一机制）
     RunService.Heartbeat:Connect(function()
         scan()
         local now = os.clock()
         local dt  = now - last
         last = now
-        acc  = acc + dt
-        if acc < INTERVAL then return end
-        acc = 0
-
-        phase = (phase + dt * SPEED) % 1
-        local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
-        if q == lastQ then return end
-        lastQ = q
-
-        local seq = getSequence(YXTheme.getPalette(), q)
         for grad in pairs(borders) do
             if grad.Parent then
-                grad.Rotation = 0
-                grad.Color = seq
+                grad.Rotation = (grad.Rotation + Speed * dt) % 360
             else
                 borders[grad] = nil
             end
@@ -1236,4 +1207,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页边框颜色流动渐变）+ 美化模块 融合版 生成时间：11月20日21时29分
+-- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页边框复用现成流光）+ 美化模块 融合版 生成时间：11月20日21时36分
