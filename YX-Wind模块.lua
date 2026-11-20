@@ -681,15 +681,22 @@ do
     local borders = {}
 
     local GRAD_NAME = "TabBtnFlow"
-    local SPEED = 90
+    local SPEED     = 0.35
+    local SEQ_STEPS = 60
+    local INTERVAL  = 1 / 30
 
-    -- 青蓝→白→青蓝 的渐变色序，随标签主题色动态更新
-    local function flowSequence(p)
-        return ColorSequence.new({
-            ColorSequenceKeypoint.new(0,   p.waveA),
-            ColorSequenceKeypoint.new(0.5, p.waveB),
-            ColorSequenceKeypoint.new(1,   p.waveA),
-        })
+    -- 每帧重建色序：一道高光沿边框流动（青→白→青），Rotation 固定 0，不旋转方向
+    local function flowSequence(p, phase)
+        local a, b = p.waveA, p.waveB
+        local keys = {}
+        for i = 0, 12 do
+            local x = i / 12
+            local s = math.sin((x - phase) * math.pi * 2)
+            local w = (s + 1) / 2
+            w = w * w
+            keys[i + 1] = ColorSequenceKeypoint.new(x, a:Lerp(b, w))
+        end
+        return ColorSequence.new(keys)
     end
 
     local function addBorder(tabBtn)
@@ -721,8 +728,9 @@ do
             grad.Name = GRAD_NAME
             grad.Parent = stroke
         end
-        grad.Enabled = true
-        grad.Color = flowSequence(YXTheme.getPalette())
+        grad.Enabled  = true
+        grad.Rotation = 0
+        grad.Color    = flowSequence(YXTheme.getPalette(), 0)
 
         borders[border] = grad
     end
@@ -743,21 +751,43 @@ do
 
     -- 主题切换时更新渐变配色
     YXTheme.onChange(function()
-        local seq = flowSequence(YXTheme.getPalette())
+        local seq = flowSequence(YXTheme.getPalette(), 0)
         for grad in pairs(borders) do
             if grad.Parent then grad.Color = seq end
         end
     end)
 
-    local last = os.clock()
+    -- 每帧重建色序推进流动（降频 30fps + 色序缓存，Rotation 恒为 0 不旋转）
+    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
+    local seqCache = {}
+    local function getSequence(p, q)
+        local seq = seqCache[q]
+        if not seq then
+            seq = flowSequence(p, q / SEQ_STEPS)
+            seqCache[q] = seq
+        end
+        return seq
+    end
+
     RunService.Heartbeat:Connect(function()
         scan()
         local now = os.clock()
-        local dt = now - last
+        local dt  = now - last
         last = now
+        acc  = acc + dt
+        if acc < INTERVAL then return end
+        acc = 0
+
+        phase = (phase + dt * SPEED) % 1
+        local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
+        if q == lastQ then return end
+        lastQ = q
+
+        local seq = getSequence(YXTheme.getPalette(), q)
         for grad in pairs(borders) do
             if grad.Parent then
-                grad.Rotation = (grad.Rotation + SPEED * dt) % 360
+                grad.Rotation = 0
+                grad.Color = seq
             else
                 borders[grad] = nil
             end
@@ -1206,4 +1236,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流光）+ 美化模块 融合版 生成时间：11月20日21时07分
+-- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页边框颜色流动渐变）+ 美化模块 融合版 生成时间：11月20日21时29分
