@@ -17,7 +17,7 @@ end
 local ThemeMemory = {}
 do
     function ThemeMemory.load()
-        if not ( and readfile) then return nil end
+        if not (isfile and readfile) then return nil end
         local ok, content = pcall(function()
             if not isfile(THEME_FILE) then return nil end
             return readfile(THEME_FILE)
@@ -1271,4 +1271,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风芙宁娜 + 新增黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日22时37分
+-- YX-WindUI 主题库（深蓝科技风芙宁娜 + 新增黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日23时42分（干净重传版/第20行isfile已验证完整）
