@@ -2,6 +2,834 @@
 请不要当卑鄙的盗用者或者倒卖者]]
 
 
+-- YX-Theme.lua（链接版）
+-- 依赖：主脚本在加载本库之前必须写 _G.WindUI = WindUI
+-- 导出：9 个符号到 _G，供主脚本与美化模块使用
+local WindUI = _G.WindUI
+if not WindUI then
+    error("YX-Themes: 缺失 _G.WindUI（主脚本须先写 _G.WindUI = WindUI）")
+end
+
+local THEME_FOLDER = "YX-HUB"
+local THEME_FILE   = THEME_FOLDER .. "/yx_last_theme.txt"
+
+local ALLOWED_THEMES = { "芙宁娜", "深海蓝", "星云紫", "极光绿", "烈焰橙", "冰霜青", "玫瑰金", "午夜靛", "柠檬黄", "森林绿", "水晶蓝" }
+local function isAllowedTheme(name)
+    return type(name) == "string" and table.find(ALLOWED_THEMES, name) ~= nil
+end
+
+local ThemeMemory = {}
+do
+    function ThemeMemory.load()
+        if not (isfile and readfile) then return nil end
+        local ok, content = pcall(function()
+            if not isfile(THEME_FILE) then return nil end
+            return readfile(THEME_FILE)
+        end)
+        if not ok or type(content) ~= "string" then return nil end
+        local name = content:match("^%s*(.-)%s*$")
+        if isAllowedTheme(name) then return name end
+        return nil
+    end
+
+    function ThemeMemory.save(name)
+        if not (writefile and isAllowedTheme(name)) then return end
+        pcall(function()
+            if isfolder and makefolder and not isfolder(THEME_FOLDER) then
+                pcall(makefolder, THEME_FOLDER)
+            end
+            writefile(THEME_FILE, name)
+        end)
+    end
+end
+
+local savedTheme = ThemeMemory.load() or "芙宁娜"
+
+local THEME_BACKGROUNDS = {
+    ["芙宁娜"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E5%85%AB%E9%87%8D%E7%A5%9E%E5%AD%90%E6%A8%B1%E8%8A%B14K%E5%A3%81%E7%BA%B8.jpg",
+    ["深海蓝"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E9%9B%B7%E7%94%B5%E5%B0%86%E5%86%9B%20%E5%8E%9F%E7%A5%9E%204K%20%E5%A3%81%E7%BA%B8.jpg",
+    ["星云紫"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E6%98%9F%E8%A7%81%E9%9B%85%20ZZZ%204K%20%E5%8A%A8%E6%BC%AB%E5%A3%81%E7%BA%B8.jpeg",
+    ["极光绿"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/%E3%80%90%E5%93%B2%E9%A3%8E%E5%A3%81%E7%BA%B8%E3%80%91%E4%BA%8C%E6%AC%A1%E5%85%83-%E5%8E%9F%E7%A5%9E-%E6%B0%94%E6%B3%A1.jpg",
+    ["烈焰橙"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
+    ["冰霜青"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E7%94%98%E9%9B%A8%20%E5%8E%9F%E7%A5%9E%204K%20%E9%AB%98%E6%B8%85%E5%A3%81%E7%BA%B8.jpg",
+    ["玫瑰金"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E8%89%BE%E8%8E%B2%C2%B7%E4%B9%94%E5%A5%B3%E4%BB%86%E5%A3%81%E7%BA%B8%20%E2%80%93%20%E7%BB%9D%E5%8C%BA%E9%9B%B6%204K.jpeg",
+    ["午夜靛"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E6%98%9F%E8%A7%81%E9%9B%85%20ZZZ%204K%20%E5%8A%A8%E6%BC%AB%E5%A3%81%E7%BA%B8.jpeg",
+    ["柠檬黄"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E7%94%98%E9%9B%A8%20%E5%8E%9F%E7%A5%9E%204K%20%E9%AB%98%E6%B8%85%E5%A3%81%E7%BA%B8.jpg",
+    ["森林绿"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/%E3%80%90%E5%93%B2%E9%A3%8E%E5%A3%81%E7%BA%B8%E3%80%91%E4%BA%8C%E6%AC%A1%E5%85%83-%E5%8E%9F%E7%A5%9E-%E6%B0%94%E6%B3%A1.jpg",
+    ["水晶蓝"] = "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/Wallpaper%20Alchemy%20-%20%E9%9B%B7%E7%94%B5%E5%B0%86%E5%86%9B%20%E5%8E%9F%E7%A5%9E%204K%20%E5%A3%81%E7%BA%B8.jpg",
+}
+
+local pickedWallpaper = {}
+local lastPick        = {}
+local enteredTheme    = nil
+
+local function wallpaperFor(name)
+    local v = THEME_BACKGROUNDS[name]
+    if type(v) == "string" then return v end
+    if type(v) ~= "table" or #v == 0 then return nil end
+    if pickedWallpaper[name] then return pickedWallpaper[name] end
+
+    local idx = math.random(1, #v)
+    if #v > 1 and lastPick[name] and v[idx] == lastPick[name] then
+        idx = idx % #v + 1
+    end
+    local chosen = v[idx]
+    pickedWallpaper[name] = chosen
+    lastPick[name] = chosen
+    return chosen
+end
+
+local function onEnterTheme(name)
+    if enteredTheme == nil then
+        enteredTheme = name
+        return
+    end
+    if enteredTheme ~= name then
+        enteredTheme = name
+        pickedWallpaper[name] = nil
+    end
+end
+
+local onUserCardClick = function() end
+
+WindUI:AddTheme({
+    Name = "芙宁娜",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#DD5B72"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#FDF0F2"),
+    Outline = Color3.fromHex("#EA788C"),
+    Text = Color3.fromHex("#5C3444"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#F5D6E1"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FDF0F2"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#F5D6E1"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#F8B9C3"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#F8C5CF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#EA788C"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FF4081"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#FF80AB"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "深海蓝",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#4FC3FF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#1E90FF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#0D47A1"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#0A1B33"),
+    Outline = Color3.fromHex("#1E90FF"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#81D4FA"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#29B6F6"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#071426"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#0D2442"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#143A63"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#2196F3"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#0D47A1"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#29B6F6"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#81D4FA"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "星云紫",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#D08AFF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#A020F0"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#6A0DAD"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#1B0B2E"),
+    Outline = Color3.fromHex("#A020F0"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#E1BEE7"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#BA68C8"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#12081F"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#211038"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#331A54"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#9C27B0"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#6A0DAD"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#CE93D8"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#E1BEE7"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "极光绿",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#69F0AE"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#00C957"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#00897B"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#08221A"),
+    Outline = Color3.fromHex("#00C957"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#A7FFEB"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1DE9B6"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#061A13"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#0B3024"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#114737"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#00C957"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#00796B"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#1DE9B6"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#A7FFEB"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "烈焰橙",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFB74D"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#FF7F00"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#D84315"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#2B1405"),
+    Outline = Color3.fromHex("#FF7F00"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFCC80"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FF9800"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#1F0E03"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#331A08"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#4A2A10"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FF7F00"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#BF360C"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FF9800"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#FFCC80"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "冰霜青",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#80DEEA"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#00ACC1"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#00838F"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#E0F7FA"),
+    Outline = Color3.fromHex("#00ACC1"),
+    Text = Color3.fromHex("#0A3A42"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#B2EBF2"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#4DD0E1"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#E0F7FA"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#B2EBF2"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#00ACC1"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#006064"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#26C6DA"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#80DEEA"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "玫瑰金",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#E6B0AA"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#C4857A"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#A0564B"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#FFF5F3"),
+    Outline = Color3.fromHex("#C4857A"),
+    Text = Color3.fromHex("#4A2320"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#F5CCC4"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#DC9A8F"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#FFF5F3"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#F9E3DC"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#C4857A"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#8E4B42"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#DC9A8F"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#F5CCC4"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "午夜靛",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#7986CB"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#3F51B5"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1A237E"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#0D0B24"),
+    Outline = Color3.fromHex("#3F51B5"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#9FA8DA"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#5C6BC0"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#08071A"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#121030"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1E1A4A"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#3F51B5"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1A237E"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#5C6BC0"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#9FA8DA"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "柠檬黄",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFE082"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#FFC107"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FF8F00"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#FFFDF0"),
+    Outline = Color3.fromHex("#FFC107"),
+    Text = Color3.fromHex("#4A3800"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFE57F"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FFD54F"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#FFFDF0"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FFF3C4"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFC107"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FF8F00"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFD54F"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#FFE082"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "森林绿",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#81C784"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#2E7D32"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1B5E20"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#0A1C0C"),
+    Outline = Color3.fromHex("#2E7D32"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#A5D6A7"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#4CAF50"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#061206"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#0F2810"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#17401A"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#2E7D32"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1B5E20"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#4CAF50"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#A5D6A7"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+
+WindUI:AddTheme({
+    Name = "水晶蓝",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#B3E5FC"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#29B6F6"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#0288D1"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#F0F8FF"),
+    Outline = Color3.fromHex("#29B6F6"),
+    Text = Color3.fromHex("#0D3347"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#D4ECF8"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#81D4FA"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#F0F8FF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#D7EEF8"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#29B6F6"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#0277BD"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#4FC3F7"), Transparency = 0 }, 
+        ["50"]  = { Color = Color3.fromHex("#B3E5FC"), Transparency = 0 }, 
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 }, 
+    }, { Rotation = 135 }),
+})
+local YXTheme = (function()
+    local listeners = {}
+    local lastName = nil
+
+    local function getName()
+        local Creator = WindUI.Creator
+        if Creator and type(Creator.Theme) == "table" and type(Creator.Theme.Name) == "string" then
+            return Creator.Theme.Name
+        end
+        if type(WindUI.Theme) == "table" and type(WindUI.Theme.Name) == "string" then
+            return WindUI.Theme.Name
+        end
+        local ok, name = pcall(function()
+            return WindUI:GetCurrentTheme()
+        end)
+        if ok and type(name) == "string" and name ~= "" then
+            return name
+        end
+        if type(WindUI.CurrentTheme) == "string" then
+            return WindUI.CurrentTheme
+        end
+        if type(WindUI.CurrentTheme) == "table" and WindUI.CurrentTheme.Name then
+            return WindUI.CurrentTheme.Name
+        end
+        return "Dark"
+    end
+
+    local function getTable()
+        local Creator = WindUI.Creator
+        if Creator and type(Creator.Theme) == "table" and Creator.Theme.Name then
+            return Creator.Theme
+        end
+        if type(WindUI.Theme) == "table" and WindUI.Theme.Name then
+            return WindUI.Theme
+        end
+        local name = getName()
+        local ok, themes = pcall(function()
+            return WindUI:GetThemes()
+        end)
+        local tbl = (ok and type(themes) == "table" and themes) or WindUI.Themes
+        if type(tbl) == "table" and type(tbl[name]) == "table" then
+            return tbl[name]
+        end
+        if type(WindUI.CurrentTheme) == "table" then
+            return WindUI.CurrentTheme
+        end
+        return nil
+    end
+
+    local function toColor3(v)
+        if typeof(v) == "Color3" then
+            return v
+        end
+        if type(v) == "string" then
+            local ok, c = pcall(Color3.fromHex, v)
+            if ok and typeof(c) == "Color3" then
+                return c
+            end
+            return nil
+        end
+        if type(v) == "table" then
+            if typeof(v.Color) == "ColorSequence" then
+                local kp = v.Color.Keypoints
+                if kp and #kp > 0 then
+                    local r, g, b = 0, 0, 0
+                    for _, k in ipairs(kp) do
+                        r = r + k.Value.R
+                        g = g + k.Value.G
+                        b = b + k.Value.B
+                    end
+                    return Color3.new(r / #kp, g / #kp, b / #kp)
+                end
+            end
+            if typeof(v.Color) == "Color3" then
+                return v.Color
+            end
+            if type(v["0"]) == "table" and typeof(v["0"].Color) == "Color3" then
+                return v["0"].Color
+            end
+        end
+        return nil
+    end
+
+    local function getTextColor()
+        local theme = getTable()
+        if theme and WindUI.Creator and type(WindUI.Creator.GetThemeProperty) == "function" then
+            local ok, value = pcall(function()
+                return WindUI.Creator:GetThemeProperty("Text", theme)
+            end)
+            if ok then
+                local c = toColor3(value)
+                if c then return c end
+            end
+        end
+        if theme then
+            local c = toColor3(theme.Text)
+            if c then return c end
+        end
+        if type(WindUI.CurrentTheme) == "table" then
+            local c = toColor3(WindUI.CurrentTheme.Text)
+            if c then return c end
+        end
+        return Color3.new(1, 1, 1)
+    end
+
+    local function dispatch(name)
+        lastName = name
+        for _, fn in ipairs(listeners) do
+            task.spawn(function()
+                pcall(fn, name)
+            end)
+        end
+    end
+
+    local function onChange(fn)
+        if type(fn) == "function" then
+            table.insert(listeners, fn)
+        end
+    end
+
+    lastName = getName()
+
+    pcall(function()
+        local Creator = WindUI.Creator
+        if Creator and type(Creator.OnThemeChange) == "function" then
+            Creator:OnThemeChange(function(newTheme)
+                local name
+                if type(newTheme) == "table" then
+                    name = newTheme.Name
+                elseif type(newTheme) == "string" then
+                    name = newTheme
+                end
+                dispatch(name or getName())
+            end)
+        end
+    end)
+
+    task.spawn(function()
+        while task.wait(0.3) do
+            local name = getName()
+            if name and name ~= lastName then
+                dispatch(name)
+            end
+        end
+    end)
+
+    local PALETTES = {
+        ["芙宁娜"] = {
+            waveA = Color3.fromHex("#EA788C"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#EA788C"),
+            tagA = Color3.fromHex("#F8B9C3"), tagMid = Color3.fromHex("#EA788C"), tagB = Color3.fromHex("#F8B9C3"),
+            openBtnBg = Color3.fromHex("#FDF0F2"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#EA788C"),
+        },
+        ["深海蓝"] = {
+            waveA = Color3.fromHex("#1E90FF"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#1E90FF"),
+            tagA = Color3.fromHex("#4FC3FF"), tagMid = Color3.fromHex("#1E90FF"), tagB = Color3.fromHex("#4FC3FF"),
+            openBtnBg = Color3.fromHex("#071426"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#1E90FF"),
+        },
+        ["星云紫"] = {
+            waveA = Color3.fromHex("#A020F0"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#A020F0"),
+            tagA = Color3.fromHex("#D08AFF"), tagMid = Color3.fromHex("#A020F0"), tagB = Color3.fromHex("#D08AFF"),
+            openBtnBg = Color3.fromHex("#12081F"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#A020F0"),
+        },
+        ["极光绿"] = {
+            waveA = Color3.fromHex("#00C957"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#00C957"),
+            tagA = Color3.fromHex("#69F0AE"), tagMid = Color3.fromHex("#00C957"), tagB = Color3.fromHex("#69F0AE"),
+            openBtnBg = Color3.fromHex("#061A13"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#00C957"),
+        },
+        ["烈焰橙"] = {
+            waveA = Color3.fromHex("#FF7F00"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#FF7F00"),
+            tagA = Color3.fromHex("#FFB74D"), tagMid = Color3.fromHex("#FF7F00"), tagB = Color3.fromHex("#FFB74D"),
+            openBtnBg = Color3.fromHex("#1F0E03"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#FF7F00"),
+        },
+        ["冰霜青"] = {
+            waveA = Color3.fromHex("#00ACC1"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#00ACC1"),
+            tagA = Color3.fromHex("#80DEEA"), tagMid = Color3.fromHex("#00ACC1"), tagB = Color3.fromHex("#80DEEA"),
+            openBtnBg = Color3.fromHex("#E0F7FA"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#00ACC1"),
+        },
+        ["玫瑰金"] = {
+            waveA = Color3.fromHex("#C4857A"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#C4857A"),
+            tagA = Color3.fromHex("#E6B0AA"), tagMid = Color3.fromHex("#C4857A"), tagB = Color3.fromHex("#E6B0AA"),
+            openBtnBg = Color3.fromHex("#FFF5F3"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#C4857A"),
+        },
+        ["午夜靛"] = {
+            waveA = Color3.fromHex("#3F51B5"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#3F51B5"),
+            tagA = Color3.fromHex("#7986CB"), tagMid = Color3.fromHex("#3F51B5"), tagB = Color3.fromHex("#7986CB"),
+            openBtnBg = Color3.fromHex("#08071A"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#3F51B5"),
+        },
+        ["柠檬黄"] = {
+            waveA = Color3.fromHex("#FFC107"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#FFC107"),
+            tagA = Color3.fromHex("#FFE082"), tagMid = Color3.fromHex("#FFC107"), tagB = Color3.fromHex("#FFE082"),
+            openBtnBg = Color3.fromHex("#FFFDF0"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#FFC107"),
+        },
+        ["森林绿"] = {
+            waveA = Color3.fromHex("#2E7D32"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#2E7D32"),
+            tagA = Color3.fromHex("#81C784"), tagMid = Color3.fromHex("#2E7D32"), tagB = Color3.fromHex("#81C784"),
+            openBtnBg = Color3.fromHex("#061206"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#2E7D32"),
+        },
+        ["水晶蓝"] = {
+            waveA = Color3.fromHex("#29B6F6"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#29B6F6"),
+            tagA = Color3.fromHex("#B3E5FC"), tagMid = Color3.fromHex("#29B6F6"), tagB = Color3.fromHex("#B3E5FC"),
+            openBtnBg = Color3.fromHex("#F0F8FF"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#29B6F6"),
+        },
+    }
+    local paletteCache = {}
+
+    local function colorToHex(c)
+        return string.format("#%02X%02X%02X",
+            math.floor(c.R * 255 + 0.5),
+            math.floor(c.G * 255 + 0.5),
+            math.floor(c.B * 255 + 0.5))
+    end
+
+    local function getPalette()
+        local name = getName()
+        if paletteCache[name] then return paletteCache[name] end
+
+        local p = PALETTES[name]
+        if not p then
+            local theme = getTable()
+            local main = Color3.fromHex("#EA788C")
+            if theme and WindUI.Creator and type(WindUI.Creator.GetThemeProperty) == "function" then
+                local ok, c = pcall(function()
+                    return WindUI.Creator:GetThemeProperty("Outline", theme)
+                end)
+                if ok and typeof(c) == "Color3" then main = c end
+            end
+            local white = Color3.fromHex("#FFFFFF")
+            p = {
+                waveA = main, waveB = white,
+                gradEdge = white, gradMid = main,
+                tagA = main:Lerp(white, 0.5), tagMid = main, tagB = main:Lerp(white, 0.5),
+                openBtnBg = white,
+                btnGradA = white, btnGradB = main,
+            }
+        end
+
+        p.openBtnText = getTextColor()
+        paletteCache[name] = p
+        return p
+    end
+
+    return {
+        getName = getName,
+        getTable = getTable,
+        getTextColor = getTextColor,
+        getPalette = getPalette,
+        colorToHex = colorToHex,
+        onChange = onChange,
+    }
+end)()
+
+local addGradientBorder
+do
+    local RunService = game:GetService("RunService")
+    local borders = {}
+    local Speed = 120
+    local last = os.clock()
+
+    local function gradient()
+        local p = YXTheme.getPalette()
+        return ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   p.gradEdge),
+            ColorSequenceKeypoint.new(0.5, p.gradMid),
+            ColorSequenceKeypoint.new(1,   p.gradEdge),
+        })
+    end
+
+    addGradientBorder = function(target, opts)
+        if not target or not opts or not opts.name then return end
+        if target:FindFirstChild(opts.name) then return end
+
+        local fitTo = opts.fitTo
+
+        local border = Instance.new("Frame")
+        border.Name = opts.name
+        border.BackgroundTransparency = 1
+        border.BorderSizePixel = 0
+        border.Active = false
+        if fitTo then
+            border.AnchorPoint = Vector2.new(0, 0)
+            border.Size = UDim2.fromOffset(0, 0)
+            border.Position = UDim2.fromOffset(0, 0)
+            border.Visible = false
+            border.ZIndex = (fitTo.ZIndex or 1) + 1
+        elseif opts.inset then
+            border.Size = UDim2.new(1, -opts.inset, 1, -opts.inset)
+            border.AnchorPoint = Vector2.new(0.5, 0.5)
+            border.Position = UDim2.new(0.5, 0, 0.5, 0)
+        else
+            border.Size = UDim2.fromScale(1, 1)
+        end
+        border.Parent = target
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, opts.radius or 16)
+        corner.Parent = border
+
+        local stroke = Instance.new("UIStroke")
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Thickness = opts.thickness or 2
+        stroke.Transparency = opts.transparency or 0
+        stroke.Color = Color3.new(1, 1, 1)
+        stroke.Parent = border
+
+        local grad = Instance.new("UIGradient")
+        grad.Enabled = true
+        grad.Color = gradient()
+        grad.Parent = stroke
+
+        borders[border] = {
+            grad = grad, stroke = stroke,
+            thickness = opts.thickness or 2, pulse = opts.pulse, fitTo = fitTo,
+        }
+    end
+
+    YXTheme.onChange(function()
+        local seq = gradient()
+        for border, r in pairs(borders) do
+            if border.Parent then
+                r.grad.Color = seq
+            else
+                borders[border] = nil
+            end
+        end
+    end)
+
+    RunService.Heartbeat:Connect(function()
+        local now = os.clock()
+        local dt = now - last
+        last = now
+        for border, r in pairs(borders) do
+            local alive = border.Parent ~= nil
+            if alive and r.fitTo then
+                local f = r.fitTo
+                if not f.Parent then
+                    border:Destroy()
+                    borders[border] = nil
+                    alive = false
+                else
+                    local w, h = f.AbsoluteSize.X, f.AbsoluteSize.Y
+                    if w >= 40 and h >= 40 then
+                        local host = border.Parent
+                        border.Size = UDim2.fromOffset(w, h)
+                        border.Position = UDim2.fromOffset(
+                            f.AbsolutePosition.X - host.AbsolutePosition.X,
+                            f.AbsolutePosition.Y - host.AbsolutePosition.Y)
+                        border.Visible = true
+                    else
+                        border.Visible = false
+                    end
+                end
+            end
+            if alive then
+                r.grad.Rotation = (r.grad.Rotation + Speed * dt) % 360
+                if r.pulse then
+                    r.stroke.Thickness = r.thickness + math.sin(now * 3) * 0.4
+                end
+            else
+                borders[border] = nil
+            end
+        end
+    end)
+end
+
+YXTheme.onChange(function(name)
+    if isAllowedTheme(name) then
+        ThemeMemory.save(name)
+    end
+end)
+
+_G.savedTheme        = savedTheme
+_G.ALLOWED_THEMES    = ALLOWED_THEMES
+_G.isAllowedTheme    = isAllowedTheme
+_G.ThemeMemory       = ThemeMemory
+_G.THEME_BACKGROUNDS = THEME_BACKGROUNDS
+_G.wallpaperFor      = wallpaperFor
+_G.onEnterTheme      = onEnterTheme
+_G.YXTheme           = YXTheme
+_G.addGradientBorder = addGradientBorder
+
+
+-- ================================================================
+-- 以下为【YX-WindUI 美化模块】（原独立链接，现与上方主题库融合为单文件）
+-- 依赖：主脚本加载本文件前，须先写 _G.WindUI 与 _G.Window
+-- 上方主题库已导出本模块所需的全部符号（YXTheme / addGradientBorder /
+-- wallpaperFor / onEnterTheme / THEME_BACKGROUNDS），此处直接复用
+-- ================================================================
 local WindUI = _G.WindUI
 if not WindUI then
     error("YX-Beautify: 未找到 WindUI。请先执行主脚本后再加载此模块！")
@@ -306,8 +1134,7 @@ do
             if btn.BackgroundColor3 ~= p.openBtnBg then
                 btn.BackgroundColor3 = p.openBtnBg
             end
-            -- YX 流光文字（打开按钮 Title）由模块 9 接管，跳过主题色，避免破坏白基底
-            if label and not label:GetAttribute("YXFlowText") and label.TextColor3 ~= p.openBtnText then
+            if label and label.TextColor3 ~= p.openBtnText then
                 label.TextColor3 = p.openBtnText
             end
             if grad then
@@ -372,8 +1199,6 @@ do
     }
 
     local function applyThemeText(inst, target)
-        -- YX 流光文字（Title / Author / 打开按钮 Title）由模块 9 接管，跳过主题色与渐变禁用
-        if inst:GetAttribute("YXFlowText") then return end
         if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then
             return
         end
@@ -591,146 +1416,4 @@ do
     end
 end
 
--- ==========================================
--- 9. 标题 / 署名 / 打开按钮 Title 青白流光渐变
---    仿 Obsidian 库 MakeVioletBlackGradient 原理：每帧重建 ColorSequence，
---    一道白色高光带沿文字左右循环扫过，主色青色。
--- ==========================================
-do
-    local RunService = game:GetService("RunService")
-
-    local FLOW_ATTR = "YXFlowText"        -- 模块 3 / 5 据此跳过这三处文字
-    local GRAD_NAME = "YXTextFlow"
-
-    -- 配色：青 -> 白（仅这两色，不掺其它颜色）
-    local CYAN       = Color3.fromRGB(72, 219, 251)
-    local WHITE      = Color3.new(1, 1, 1)
-    local WHITE_BASE = Color3.new(1, 1, 1)   -- 文字白基底，让 UIGradient 原色完整呈现
-
-    local STEPS     = 12       -- 色序关键点分段数
-    local SPEED     = 0.35     -- 高光扫动速度（每秒循环圈数）
-    local SEQ_STEPS = 60       -- 相位量化档数（缓存，避免每帧分配）
-    local INTERVAL  = 1 / 30   -- 30fps 降频
-
-    -- 每帧重建的色序：高光带位置随 phase 平移，青为主、白为扫过的高光
-    local function buildSequence(phase)
-        local keys = {}
-        for i = 0, STEPS do
-            local x = i / STEPS
-            local s = math.sin((x - phase) * math.pi * 2)
-            local w = (s + 1) / 2
-            w = w * w                      -- 收窄白高光，使青色占主导
-            keys[i + 1] = ColorSequenceKeypoint.new(x, CYAN:Lerp(WHITE, w))
-        end
-        return ColorSequence.new(keys)
-    end
-
-    local seqCache = {}
-    local function getSequence(q)
-        local seq = seqCache[q]
-        if not seq then
-            seq = buildSequence(q / SEQ_STEPS)
-            seqCache[q] = seq
-        end
-        return seq
-    end
-
-    local flows = {}   -- [UIGradient] = TextLabel
-
-    local function attach(label)
-        if not label or label:GetAttribute(FLOW_ATTR) then return end
-        pcall(function() label:SetAttribute(FLOW_ATTR, true) end)
-
-        label.TextColor3       = WHITE_BASE
-        label.TextTransparency = 0
-
-        local grad = label:FindFirstChild(GRAD_NAME)
-        if not grad or not grad:IsA("UIGradient") then
-            grad = Instance.new("UIGradient")
-            grad.Name   = GRAD_NAME
-            grad.Parent = label
-        end
-        grad.Enabled  = true
-        grad.Rotation = 0
-        grad.Color    = getSequence(0)
-        flows[grad]   = label
-    end
-
-    -- 精确定位三处文字（路径与模块 7 / 3 一致），并带轻量兜底
-    local function collect()
-        local out = {}
-        local main     = Window.UIElements and Window.UIElements.Main
-        local mainMain = main     and main:FindFirstChild("Main")
-        local topbar   = mainMain and mainMain:FindFirstChild("Topbar")
-        local left     = topbar   and topbar:FindFirstChild("Left")
-        local box      = left     and left:FindFirstChild("Title")   -- 容器 Frame
-
-        if box then
-            for _, name in ipairs({"Title", "Author"}) do
-                local t = box:FindFirstChild(name)
-                if t and t:IsA("TextLabel") then out[#out + 1] = t end
-            end
-        else
-            -- 兜底：仅认「父级是 Title 容器」的 Title，及独一无二的 Author，避免误伤标签页
-            if main then
-                for _, d in ipairs(main:GetDescendants()) do
-                    if d:IsA("TextLabel") and
-                       (d.Name == "Author" or (d.Name == "Title" and d.Parent and d.Parent.Name == "Title")) then
-                        out[#out + 1] = d
-                    end
-                end
-            end
-        end
-
-        local btn = Window.OpenButtonMain and Window.OpenButtonMain.Button
-        if btn then
-            local t = btn:FindFirstChild("TextLabel", true)
-            if t and t:IsA("TextLabel") then out[#out + 1] = t end
-        end
-        return out
-    end
-
-    local function applyAll()
-        for _, label in ipairs(collect()) do
-            attach(label)
-        end
-    end
-
-    applyAll()
-
-    -- 低频兜底：捕获 SetAuthor 后补建、EditOpenButton 重设、对象被替换
-    task.spawn(function()
-        while task.wait(1.5) do
-            applyAll()
-        end
-    end)
-
-    -- 每帧推进相位；仅在量化档变化时写一次 Color（脏标记 + 30fps 降频）
-    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
-
-    RunService.Heartbeat:Connect(function()
-        local now = os.clock()
-        local dt  = now - last
-        last = now
-        acc  = acc + dt
-        if acc < INTERVAL then return end
-        local step = acc
-        acc = 0
-
-        phase = (phase + step * SPEED) % 1
-        local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
-        if q == lastQ then return end
-        lastQ = q
-
-        local seq = getSequence(q)
-        for grad in pairs(flows) do
-            if grad.Parent then
-                grad.Color = seq
-            else
-                flows[grad] = nil
-            end
-        end
-    end)
-end
-
--- YX | 11月15日23时37分
+-- YX-WindUI 主题库（11 主题：芙宁娜 + 10 渐变主题）+ 美化模块 融合版 生成时间：11月20日18时46分
