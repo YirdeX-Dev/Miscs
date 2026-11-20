@@ -299,6 +299,13 @@ local YXTheme = (function()
             openBtnBg = Color3.fromHex("#0D2438"),
             btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#2979FF"),
         },
+        ["黑曜"] = {
+            waveA = Color3.fromHex("#9AA0A6"), waveB = Color3.fromHex("#E8EAED"),
+            gradEdge = Color3.fromHex("#E8EAED"), gradMid = Color3.fromHex("#5F6368"),
+            tagA = Color3.fromHex("#B8BDC2"), tagMid = Color3.fromHex("#5F6368"), tagB = Color3.fromHex("#9AA0A6"),
+            openBtnBg = Color3.fromHex("#1A1C20"),
+            btnGradA = Color3.fromHex("#9AA0A6"), btnGradB = Color3.fromHex("#3C4043"),
+        },
     }
     local paletteCache = {}
 
@@ -1271,4 +1278,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风芙宁娜 + 新增黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日23时42分（干净重传版/第20行isfile已验证完整）
+-- YX-WindUI 主题库（深蓝科技风芙宁娜 + 新增黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日23时56分（黑曜PALETTES写死冷灰配色/切主题美化模块跟随变色/其他主题未动）
