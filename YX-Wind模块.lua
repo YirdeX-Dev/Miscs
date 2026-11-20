@@ -9,7 +9,7 @@ end
 local THEME_FOLDER = "YX-HUB"
 local THEME_FILE   = THEME_FOLDER .. "/yx_last_theme.txt"
 
-local ALLOWED_THEMES = { "芙宁娜" }
+local ALLOWED_THEMES = { "芙宁娜", "黑曜" }
 local function isAllowedTheme(name)
     return type(name) == "string" and table.find(ALLOWED_THEMES, name) ~= nil
 end
@@ -17,7 +17,7 @@ end
 local ThemeMemory = {}
 do
     function ThemeMemory.load()
-        if not (isfile and readfile) then return nil end
+        if not ( and readfile) then return nil end
         local ok, content = pcall(function()
             if not isfile(THEME_FILE) then return nil end
             return readfile(THEME_FILE)
@@ -45,6 +45,9 @@ local THEME_BACKGROUNDS = {
     ["芙宁娜"] = {
         "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/%E3%80%90%E5%93%B2%E9%A3%8E%E5%A3%81%E7%BA%B8%E3%80%91%E4%BA%8C%E6%AC%A1%E5%85%83-%E5%8E%9F%E7%A5%9E-%E6%B0%94%E6%B3%A1.jpg",
         "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
+    },
+    ["黑曜"] = {
+        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/%E3%80%90%E5%93%B2%E9%A3%8E%E5%A3%81%E7%BA%B8%E3%80%91%E4%BA%8C%E6%AC%A1%E5%85%83%E5%B0%91%E5%A5%B3-%E5%86%B7%E5%85%89.jpg",
     },
 }
 
@@ -107,6 +110,37 @@ WindUI:AddTheme({
     Icon = WindUI:Gradient({
         ["0"]   = { Color = Color3.fromHex("#00FFFF"), Transparency = 0 },
         ["50"]  = { Color = Color3.fromHex("#E0FFFF"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+    }, { Rotation = 135 }),
+})
+
+-- 黑曜：黑 / 白 / 灰 + 冷色调 + 偏暗黑系
+WindUI:AddTheme({
+    Name = "黑曜",
+    Accent = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#E8EAED"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#9AA0A6"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#5F6368"), Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = Color3.fromHex("#1A1C20"),
+    Outline = Color3.fromHex("#5F6368"),
+    Text = Color3.fromHex("#F1F3F4"),
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#9AA0A6"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#5F6368"), Transparency = 0 },
+    }, { Rotation = 0 }),
+    Background = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#0B0C0E"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#131519"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#1C1F24"), Transparency = 0 },
+    }, { Rotation = 90 }),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#5F6368"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#2A2D31"), Transparency = 0 },
+    }, { Rotation = 135 }),
+    Icon = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#E8EAED"), Transparency = 0 },
+        ["50"]  = { Color = Color3.fromHex("#B8BDC2"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
     }, { Rotation = 135 }),
 })
@@ -1237,4 +1271,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日21时59分
+-- YX-WindUI 主题库（深蓝科技风芙宁娜 + 新增黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 文字流光 + 标签页流动修复遍历bug+还原青白）+ 美化模块 融合版 生成时间：11月20日22时37分
