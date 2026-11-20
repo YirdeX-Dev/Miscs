@@ -1,6 +1,3 @@
---[[YirdeX制作 | 开源 | 适配Wind UI美化模块
-请不要当卑鄙的盗用者或者倒卖者]]
-
 -- YX-Theme.lua（链接版）
 -- 依赖：主脚本在加载本库之前必须写 _G.WindUI = WindUI
 -- 导出：9 个符号到 _G，供主脚本与美化模块使用
@@ -45,7 +42,10 @@ end
 local savedTheme = ThemeMemory.load() or "芙宁娜"
 
 local THEME_BACKGROUNDS = {
-    -- 无背景图：已按需求清空所有壁纸
+    ["芙宁娜"] = {
+        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/%E3%80%90%E5%93%B2%E9%A3%8E%E5%A3%81%E7%BA%B8%E3%80%91%E4%BA%8C%E6%AC%A1%E5%85%83-%E5%8E%9F%E7%A5%9E-%E6%B0%94%E6%B3%A1.jpg",
+        "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
+    },
 }
 
 local pickedWallpaper = {}
@@ -259,11 +259,11 @@ local YXTheme = (function()
 
     local PALETTES = {
         ["芙宁娜"] = {
-            waveA = Color3.fromHex("#EA788C"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#EA788C"),
-            tagA = Color3.fromHex("#F8B9C3"), tagMid = Color3.fromHex("#EA788C"), tagB = Color3.fromHex("#F8B9C3"),
-            openBtnBg = Color3.fromHex("#FDF0F2"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#EA788C"),
+            waveA = Color3.fromHex("#00E5FF"), waveB = Color3.fromHex("#FFFFFF"),
+            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#00B0FF"),
+            tagA = Color3.fromHex("#00E5FF"), tagMid = Color3.fromHex("#2979FF"), tagB = Color3.fromHex("#00E5FF"),
+            openBtnBg = Color3.fromHex("#0D2438"),
+            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#2979FF"),
         },
     }
     local paletteCache = {}
@@ -282,7 +282,7 @@ local YXTheme = (function()
         local p = PALETTES[name]
         if not p then
             local theme = getTable()
-            local main = Color3.fromHex("#EA788C")
+            local main = Color3.fromHex("#00B0FF")
             if theme and WindUI.Creator and type(WindUI.Creator.GetThemeProperty) == "function" then
                 local ok, c = pcall(function()
                     return WindUI.Creator:GetThemeProperty("Outline", theme)
@@ -1036,4 +1036,4 @@ do
     end
 end
 
--- YX-WindUI 主题库（深蓝科技风 / 无背景图）+ 美化模块 融合版 生成时间：11月20日19时33分
+-- YX-WindUI 主题库（深蓝科技风 + 双壁纸 + 青蓝边框）+ 美化模块 融合版 生成时间：11月20日19时40分
