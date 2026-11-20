@@ -301,7 +301,8 @@ local YXTheme = (function()
             textFlowA = Color3.fromRGB(72, 219, 251), textFlowB = Color3.fromHex("#FFFFFF"),
         },
         ["黑曜"] = {
-            waveA = Color3.fromHex("#9AA0A6"), waveB = Color3.fromHex("#E8EAED"),
+            -- 标签页边框流动：白主色 + 黑带（与文字流光黑白一致）；其余静态渐变仍用下方冷灰
+            waveA = Color3.fromHex("#FFFFFF"), waveB = Color3.fromHex("#000000"),
             gradEdge = Color3.fromHex("#E8EAED"), gradMid = Color3.fromHex("#5F6368"),
             tagA = Color3.fromHex("#B8BDC2"), tagMid = Color3.fromHex("#5F6368"), tagB = Color3.fromHex("#9AA0A6"),
             openBtnBg = Color3.fromHex("#1A1C20"),
@@ -729,7 +730,7 @@ do
     local SEQ_STEPS = 60
     local INTERVAL  = 1 / 30
 
-    -- 每帧重建色序：一道高光沿边框流动（青→白→青），Rotation 固定 0，不旋转方向
+    -- 每帧重建色序：一道高光带沿边框流动（配色跟随主题 waveA/waveB：芙宁娜青白、黑曜黑白），Rotation 固定 0，不旋转方向
     local function flowSequence(p, phase)
         local a, b = p.waveA, p.waveB
         local keys = {}
@@ -1292,4 +1293,4 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风芙宁娜 + 黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 标签页颜色流动不旋转）+ 美化模块 融合版 生成时间：11月21日00时09分（本次仅改模块9文字流光：配色改从PALETTES.textFlowA/textFlowB读取，芙宁娜=青→白、黑曜=白→黑，切主题自动刷新；其余模块与配色未动）
+-- YX-WindUI 主题库（深蓝科技风芙宁娜 + 黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 标签页颜色流动不旋转）+ 美化模块 融合版 生成时间：11月21日00时17分（本次：黑曜下流动类模块统一黑白——模块2标签页边框 waveA/waveB 改为白#FFFFFF+黑#000000，与模块9文字流光一致；芙宁娜不动、静态渐变模块仍用冷灰、其余模块未改）
