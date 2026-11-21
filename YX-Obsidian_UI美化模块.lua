@@ -1,5 +1,5 @@
 
-local Library, ThemeManager, SaveManager = ...
+local Library, _, SaveManager = ...
 
 if not Library then
     warn("[YX] UI 美化模块需通过主脚本加载，请勿单独运行")
@@ -32,7 +32,6 @@ end
 
 local DefaultThemeBackground = {
     Library = nil,
-    ThemeManager = nil,
     Images = {
         "https://raw.githubusercontent.com/YirdeX-Dev/Miscs/refs/heads/main/IMG_20261107_105307.jpg",
     },
@@ -292,11 +291,6 @@ function DefaultThemeBackground:SetLibrary(Lib)
     return self
 end
 
-function DefaultThemeBackground:SetThemeManager(Manager)
-    self.ThemeManager = Manager
-    return self
-end
-
 function DefaultThemeBackground:SetImages(Images)
     assert(type(Images) == "table" and #Images > 0, "图片列表必须是非空数组")
     self.Images = Images
@@ -323,10 +317,6 @@ function DefaultThemeBackground:IsDefaultTheme(ThemeName)
     if type(ThemeName) ~= "string" then return false end
     for _, Name in ipairs(self.TriggerNames) do
         if ThemeName == Name then return true end
-    end
-    if self.MatchAssignedDefault and self.ThemeManager then
-        local Assigned = self.ThemeManager.DefaultThemeName
-        if Assigned and ThemeName == Assigned then return true end
     end
     return false
 end
@@ -451,8 +441,7 @@ function DefaultThemeBackground:ApplyPaletteFor(Index, Force)
     if not (self.ApplyPalette and Lib and Lib.Scheme) then return end
     -- 默认只把「背景 1」配色套用一次（启动时）。切到别的主题时不再用固定调色板
     --   覆盖主题自身的 AccentColor / BackgroundColor，渐变才能实时跟随当前主题。
-    -- Force = true：用于「从别的主题切回默认主题」。ThemeManager 刚用它自己的主题数据
-    --   整表覆盖了 Scheme，必须重新把背景 1 配色套回去，否则回切后配色不是启动那套默认值。
+    -- Force = true：强制把背景 1 配色重新套回（即使本次已套用过）。
     if self._PaletteApplied and not Force then return end
     self._PaletteApplied = true
     local P = self.Palettes[Index] or self.Palettes[1]
@@ -815,10 +804,10 @@ end
 --   所以走库的一等公民对象模型：
 --       Library.Tabs → Tab.Groupboxes / Tabboxes / DependencyGroupboxes
 --                    → Groupbox.Elements → Type=="Button" / "SubButton" → .Base
---   动态扫描，运行时新增的按钮（含 SaveManager/ThemeManager 生成的）也会自动纳入。
+--   动态扫描，运行时新增的按钮（含 SaveManager 等生成的）也会自动纳入。
 --
 --   为什么跟着主题色走：按钮渐变不再写死配色，每 0.05s 读一次
---   Library.Scheme.AccentColor（换背景 / ThemeManager 切主题都会改它），
+--   Library.Scheme.AccentColor（换背景 / 切换主题都会改它），
 --   由它实时生成同色相的垂直渐变；签名变化即刷新所有按钮。
 --
 --   方向规则（ButtonGradientAngle = 180，垂直「上 -> 下」）：
@@ -1479,7 +1468,6 @@ end
 function DefaultThemeBackground:Enable()
     if self.Enabled then return self end
     assert(self.Library, "请先调用 SetLibrary(Library)")
-    assert(self.ThemeManager and type(self.ThemeManager.ApplyTheme) == "function", "请先调用 SetThemeManager(ThemeManager)")
 
     self:InstallCacheOptimizer()
     self:InstallBackgroundTracker()
@@ -1492,56 +1480,6 @@ function DefaultThemeBackground:Enable()
     self:ApplyUrl(self.LastUrl)
     if self.ApplyPalette then self:ApplyPaletteFor(Startup) end
     self:SaveSelection(Startup)
-
-    local Module = self
-    local Original = self.ThemeManager.ApplyTheme
-    self._OriginalApplyTheme = Original
-    self._SkipFirstApply = (self.ThemeManager.AppliedToTab ~= true)
-
-    self.ThemeManager.ApplyTheme = function(Manager, ThemeName, ...)
-        local Results = table.pack(Original(Manager, ThemeName, ...))
-
-        if Module.Enabled and type(ThemeName) == "string" and ThemeName ~= "" then
-            local Previous = Module.LastAppliedTheme
-            local IsFirst = (Previous == nil)
-            local Changed = (Previous ~= ThemeName)
-            local SkipFirst = IsFirst and Module._SkipFirstApply
-
-            Module.LastAppliedTheme = ThemeName
-
-            if Module:IsDefaultTheme(ThemeName) then
-                -- 主题应用会把 BackgroundImage 清空（内置主题数据带 ""），贴回当前背景
-                if Changed and not IsFirst then
-                    -- 从别的主题「切回默认主题」：ThemeManager 刚用它自己的主题数据
-                    -- 整表覆盖了 Scheme，必须强制把「背景 1」配色重新套回，否则回切后
-                    -- 停留的是 ThemeManager 的默认主题配色，不是启动时那套默认配色。
-                    pcall(function()
-                        if Module.LastUrl then Module:ApplyUrl(Module.LastUrl) end
-                        if Module.ApplyPalette then
-                            Module:ApplyPaletteFor(Module.LastIndex, true)
-                        end
-                    end)
-                elseif Changed and (not SkipFirst or Module.RollOnFirstApply) then
-                    pcall(function() Module:Roll() end)
-                elseif Module.LastUrl then
-                    pcall(function()
-                        Module:ApplyUrl(Module.LastUrl)
-                        if Module.ApplyPalette then Module:ApplyPaletteFor(Module.LastIndex) end
-                    end)
-                end
-            end
-
-            -- 主题色刚变（切到别的主题 / 切回默认）立即重算各路渐变与白基底，
-            -- 不必等下个 0.05s 心跳，切换瞬间配色就跟上。
-            if Changed then
-                pcall(function() Module:SyncDynamicGradients() end)
-                pcall(function() Module:SyncElementGradients() end)
-                pcall(function() Module:SyncButtonGradients() end)
-            end
-        end
-
-        return table.unpack(Results, 1, Results.n)
-    end
 
     self.Enabled = true
     self:InstallGradientSync()
@@ -1556,9 +1494,6 @@ function DefaultThemeBackground:Disable()
         self._GradientSyncConn = nil
     end
 
-    if self.ThemeManager and self._OriginalApplyTheme then
-        self.ThemeManager.ApplyTheme = self._OriginalApplyTheme
-    end
     local Lib = self.Library
     local IM = Lib and Lib.ImageManager
     if IM and self._OriginalDownloadAsset then
@@ -1644,7 +1579,7 @@ function DefaultThemeBackground:Disable()
 end
 
 local Bg = DefaultThemeBackground
-Bg:SetLibrary(Library):SetThemeManager(ThemeManager)
+Bg:SetLibrary(Library)
 -- ==================== 模块定义结束 ====================
 
 -- 「背景图片」选择下拉已移除：只保留背景 1，由 Bg:Enable() 自动套用，
