@@ -1616,29 +1616,21 @@ do
     end
 end
 
---    YXGradientBorder:Enable()          -- 窗口 + 标签页一起开（默认）
---    YXGradientBorder:Disable()         -- 全部关闭
---    YXGradientBorder:EnableTabs()      -- 只开标签页边框
---    YXGradientBorder:DisableTabs()     -- 只关标签页边框
---    YXGradientBorder:EnableWindow()    -- 只开窗口边框
---    YXGradientBorder:DisableWindow()   -- 只关窗口边框
---    YXGradientBorder:SetColors(Color3, Color3)   -- 端点 / 中点（覆盖默认的 亮青/浅青）
---    YXGradientBorder:SetSpeed(90)     -- 窗口渐变速度（度/秒）
---    YXGradientBorder:SetThickness(4)  -- 窗口描边粗细
---    YXGradientBorder:SetPulse(true)   -- 窗口描边呼吸
---    YXGradientBorder:SetTabSpeed(90)             -- 标签页渐变速度
+-- ============================================================
+-- 标签页边框渐变模块（仅标签页；窗口 / 通知边框渐变已移除）
+--    YXGradientBorder:EnableTabs()      -- 开启标签页边框
+--    YXGradientBorder:DisableTabs()     -- 关闭标签页边框
+--    YXGradientBorder:Enable()          -- 等价于 EnableTabs()
+--    YXGradientBorder:Disable()         -- 等价于 DisableTabs()
+--    YXGradientBorder:SetColors(Color3, Color3)   -- 端点 / 中点（覆盖默认的主题色）
+--    YXGradientBorder:SetTabSpeed(90)             -- 标签页渐变速度（度/秒）
 --    YXGradientBorder:SetTabThickness(2, 3)       -- 未选中 / 选中粗细
 --    YXGradientBorder:SetTabIdleTransparency(0.5) -- 未选中淡化程度
 --    YXGradientBorder:SetTabRadius(8)             -- 圆角；传 nil 恢复自动跟随
 --    YXGradientBorder:SetTabOnlyActive(true)      -- 只给选中的标签显示
 --    YXGradientBorder:SetTabIncludeContent(true)  -- 连标签内容区也加
---    YXGradientBorder:EnableNotifs()   -- 只开通知流动渐变描边（Enable 时已自动开）
---    YXGradientBorder:DisableNotifs()  -- 只关通知描边
---    YXGradientBorder:SetNotifSpeed(90)       -- 通知渐变旋转速度
---    YXGradientBorder:SetNotifThickness(2)    -- 通知描边粗细
---  通知由库动态创建/销毁，模块每 0.2s 差量扫描 Library.Notifications，自动挂载与清理。
---  窗口 / 标签页 / 通知边框统一「跟随主题强调色 + 雾蓝调和」，切主题一起换色，不再写死青色。
---  也可直接改 YXGradientBorder.Tabs.xxx / Notifs.xxx（见下方配置表）后即生效。
+--  标签页边框统一「跟随主题强调色 + 雾蓝调和」，切主题一起换色。
+--  也可直接改 YXGradientBorder.Tabs.xxx（见下方配置表）后即生效。
 -- ============================================================
 
 local YXGradientBorder = (function(Library)
@@ -1647,16 +1639,8 @@ local YXGradientBorder = (function(Library)
     -- Library 由末尾 (...)(Library) 显式传入，避免 local 作用域歧义
     local RunService = game:GetService("RunService")
 
-    -- ===== 窗口边框参数（v1 保持兼容）=====
-    M.Radius       = 12     -- 与 Window:SetCornerRadius(12) 保持一致
-    M.Thickness    = 4
-    M.Transparency = 0
-    M.Speed        = 120
-    M.Pulse        = true
-    M.Name         = "YXGradientBorder"
-    -- 边框颜色默认跟随主题强调色（雾蓝调和），切主题自动换色。
-    --   想固定颜色：把下面两行填成 Color3.fromRGB(...)，并把 FollowTheme 设为 false。
-    --   也可运行时调 YXGradientBorder:SetColors(Color3, Color3) 临时覆盖。
+    -- ===== 边框配色（标签页共用）=====
+    -- 跟随主题强调色（雾蓝调和），切主题自动换色。
     M.FollowTheme  = true   -- true = 边框跟随主题强调色；false = 用下面两个固定色
     M.EdgeColor    = nil    -- 端点：默认由主题色压暗得到
     M.MidColor     = nil    -- 中点：默认由主题色提亮得到的高光
@@ -1664,7 +1648,6 @@ local YXGradientBorder = (function(Library)
     -- ===== 标签页边框参数 =====
     M.Tabs = {
         Enabled            = false,
-        AutoEnable         = true,   -- Enable() 时自动一并开启标签页
         Radius             = nil,    -- nil = 自动跟随按钮自带 UICorner；填数字覆盖
         Thickness          = 2,      -- 未选中标签描边粗细
         ActiveThickness    = 3,      -- 选中标签描边粗细
@@ -1678,35 +1661,17 @@ local YXGradientBorder = (function(Library)
         Name               = "YXGradientBorder_Tab",
     }
 
-    -- ===== 通知边框参数（流动渐变描边，动态出现的通知自动挂上）=====
-    M.Notifs = {
-        Enabled        = false,
-        AutoEnable     = true,   -- Enable() 时自动一并开启
-        Radius         = nil,    -- nil = 自动跟随通知自带 UICorner
-        Thickness      = 2,
-        Transparency   = 0,
-        Speed          = 120,    -- 渐变旋转速度（度/秒）
-        Name           = "YXGradientBorder_Notif",
-    }
-
-    M.Enabled = false   -- 窗口边框状态（标签页状态见 M.Tabs.Enabled / M.Notifs.Enabled）
-
     -- ===== 运行时 =====
-    local winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
-    local winConn, tabConn = nil, nil
-    local winLast, tabLast, tabAngle, scanAcc = 0, 0, 0, 0
+    local tabConn = nil
+    local tabLast, tabAngle, scanAcc = 0, 0, 0
     local manualSeq = nil
     local tabItems = {}   -- [目标对象] = {frame, corner, stroke, grad, kind, tab}
-    local notifItems = {} -- [通知 Holder] = {frame, corner, stroke, grad}
-    local notifConn = nil
-    local notifLast, notifAngle, notifScanAcc = 0, 0, 0
 
     local function clamp01(v)
         if v < 0 then return 0 elseif v > 1 then return 1 end
         return v
     end
     local function shade(c, factor)
-        -- factor>1 提亮，<1 压暗；限制到 [0,1]
         return Color3.new(
             clamp01(c.R * factor),
             clamp01(c.G * factor),
@@ -1716,7 +1681,6 @@ local YXGradientBorder = (function(Library)
 
     -- 边框配色：跟随主题强调色（雾蓝调和），主题变化即重建序列，不再写死青色。
     --   端点 = 主题色压暗，中点 = 主题色提亮降饱和的高光；0 与 1 端点相同，旋转接缝平滑。
-    --   窗口 / 标签页 / 通知三处每帧都取本函数返回值，主题一变三处一起更新。
     --   签名计算降频到 0.12s，平时直接返回缓存，不增加每帧开销。
     --   SetColors() 的 manualSeq 优先级最高，仍可运行时覆盖。
     local function BuildThemeColors()
@@ -1753,15 +1717,7 @@ local YXGradientBorder = (function(Library)
         return themeSeq
     end
 
-    local function getMainFrame()
-        if not Library then return nil end
-        local w = Library.Window
-        local mf = w and w.MainFrame
-        if mf and mf.Parent then return mf end
-        return nil
-    end
-
-    -- 通用：在 parent 内建一层透明描边框（所有目标共用这一套机制）
+    -- 通用：在 parent 内建一层透明描边框
     local function newBorder(parent, radius, thickness, inset, name)
         local f = Instance.new("Frame")
         f.Name = name or "YXGradientBorder"
@@ -1793,49 +1749,6 @@ local YXGradientBorder = (function(Library)
         g.Parent = s
 
         return { frame = f, corner = c, stroke = s, grad = g }
-    end
-
-    -- ========================================================
-    -- 窗口边框
-    -- ========================================================
-    function M:EnableWindow()
-        if winFrame and winFrame.Parent then return self end
-        local mf = getMainFrame()
-        if not mf then
-            warn("YXGradientBorder: 未找到 Library.Window.MainFrame，请在 CreateWindow 之后调用 Enable()")
-            return self
-        end
-
-        local b = newBorder(mf, M.Radius, M.Thickness, 0, M.Name)
-        winFrame, winCorner, winStroke, winGrad = b.frame, b.corner, b.stroke, b.grad
-        winStroke.Transparency = M.Transparency
-        M.Enabled = true
-        winLast = os.clock()
-
-        winConn = RunService.Heartbeat:Connect(function()
-            if not (winFrame and winFrame.Parent) then M:DisableWindow(); return end
-            local now = os.clock()
-            local dt = now - winLast
-            winLast = now
-            if not manualSeq then
-                local seq = buildSequence()
-                winGrad.Color = seq
-            end
-            local rot = (winGrad.Rotation + M.Speed * dt) % 360
-            winGrad.Rotation = rot
-            if M.Pulse then
-                winStroke.Thickness = M.Thickness + math.sin(now * 3) * 0.4
-            end
-        end)
-        return self
-    end
-
-    function M:DisableWindow()
-        if winConn then pcall(function() winConn:Disconnect() end); winConn = nil end
-        if winFrame then pcall(function() winFrame:Destroy() end) end
-        winFrame, winCorner, winStroke, winGrad = nil, nil, nil, nil
-        M.Enabled = false
-        return self
     end
 
     -- ========================================================
@@ -1950,101 +1863,15 @@ local YXGradientBorder = (function(Library)
     end
 
     -- ========================================================
-    -- 通知边框（流动渐变描边）
-    --   通知由 Library:Notify 动态创建、几秒后销毁，存在 Library.Notifications 里
-    --   （key = FakeBackground，value = Data，Data.Holder 是通知主体 Frame）。
-    --   因此照标签页那套做差量同步：每 0.2s 扫一次，新通知自动挂、销毁的自动清。
-    -- ========================================================
-    local function notifRadius(holder)
-        local r = M.Notifs.Radius
-        if type(r) == "number" then return r end
-        local ok, c = pcall(function()
-            return holder.FindFirstChildOfClass and holder:FindFirstChildOfClass("UICorner")
-        end)
-        if ok and c and c.CornerRadius then return c.CornerRadius.Offset or 0 end
-        return 0
-    end
-
-    local function collectNotifs()
-        local out = {}
-        if not (Library and type(Library.Notifications) == "table") then return out end
-        for _, Data in pairs(Library.Notifications) do
-            if type(Data) == "table" and Data.Holder then
-                local holder = Data.Holder
-                local ok, parent = pcall(function() return holder.Parent end)
-                if ok and parent then out[#out + 1] = holder end
-            end
-        end
-        return out
-    end
-
-    local function syncNotifs()
-        local seen = {}
-        for _, holder in ipairs(collectNotifs()) do
-            seen[holder] = true
-            local item = notifItems[holder]
-            if not item then
-                item = newBorder(holder, notifRadius(holder), M.Notifs.Thickness, 0, M.Notifs.Name)
-                item.stroke.Transparency = M.Notifs.Transparency
-                notifItems[holder] = item
-            end
-        end
-        for holder, item in pairs(notifItems) do
-            if not seen[holder] then
-                pcall(function() item.frame:Destroy() end)
-                notifItems[holder] = nil
-            end
-        end
-    end
-
-    function M:EnableNotifs()
-        if M.Notifs.Enabled then return self end
-        M.Notifs.Enabled = true
-        notifLast = os.clock()
-        notifScanAcc = 0
-        syncNotifs()
-        notifConn = RunService.Heartbeat:Connect(function()
-            local now = os.clock()
-            local dt = now - notifLast
-            notifLast = now
-            local seq = buildSequence()   -- 已按主题色缓存，不会每帧新建
-            notifAngle = (notifAngle + M.Notifs.Speed * dt) % 360
-            notifScanAcc = notifScanAcc + dt
-            if notifScanAcc >= 0.2 then notifScanAcc = 0; syncNotifs() end
-            for _, item in pairs(notifItems) do
-                if item.frame and item.frame.Parent then
-                    item.grad.Color = seq
-                    item.grad.Rotation = notifAngle
-                end
-            end
-        end)
-        return self
-    end
-
-    function M:DisableNotifs()
-        if notifConn then pcall(function() notifConn:Disconnect() end); notifConn = nil end
-        for holder, item in pairs(notifItems) do
-            pcall(function() item.frame:Destroy() end)
-            notifItems[holder] = nil
-        end
-        M.Notifs.Enabled = false
-        return self
-    end
-
-    -- ========================================================
-    -- 统一开关 + Setter
+    -- 统一开关 + Setter（仅标签页）
     -- ========================================================
     function M:Enable()
-        M:EnableWindow()
-        if M.Tabs.AutoEnable ~= false then M:EnableTabs() end
-        if M.Notifs.AutoEnable ~= false then M:EnableNotifs() end
+        M:EnableTabs()
         return self
     end
 
     function M:Disable()
-        M:DisableNotifs()
         M:DisableTabs()
-        M:DisableWindow()
         return self
     end
 
@@ -2064,25 +1891,11 @@ local YXGradientBorder = (function(Library)
             })
         end
         local seq = buildSequence()
-        if winGrad then winGrad.Color = seq end
         for _, item in pairs(tabItems) do
             if item.grad then item.grad.Color = seq end
         end
-        for _, item in pairs(notifItems) do
-            if item.grad then item.grad.Color = seq end
-        end
         return self
     end
-
-    function M:SetSpeed(v)   if type(v) == "number" then M.Speed = v end; return self end
-    function M:SetThickness(v)
-        if type(v) == "number" then
-            M.Thickness = v
-            if winStroke then winStroke.Thickness = v end
-        end
-        return self
-    end
-    function M:SetPulse(v)   M.Pulse = v and true or false; return self end
 
     function M:SetTabSpeed(v)
         if type(v) == "number" then M.Tabs.Speed = v end
@@ -2118,24 +1931,11 @@ local YXGradientBorder = (function(Library)
         if M.Tabs.Enabled then syncTargets() end
         return self
     end
-    function M:SetNotifSpeed(v)
-        if type(v) == "number" then M.Notifs.Speed = v end
-        return self
-    end
-    function M:SetNotifThickness(v)
-        if type(v) == "number" then
-            M.Notifs.Thickness = v
-            if M.Notifs.Enabled then
-                for _, item in pairs(notifItems) do item.stroke.Thickness = v end
-            end
-        end
-        return self
-    end
 
     return M
 end)(Library)
 
-YXGradientBorder:Enable()
+YXGradientBorder:EnableTabs()
 
 -- 液态玻璃：照搬 UI 库 Library.lua 原版（函数体逐字一致，仅去 Luau 类型注解以适配纯 Lua）
 local GlassSchemeColors = {
