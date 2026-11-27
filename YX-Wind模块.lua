@@ -49,6 +49,8 @@ local savedTheme = ThemeMemory.load() or "芙宁娜"
 -- 芙宁娜：白字 + 白色边框，统一深蓝底色；浅青与亮青只用于文字流光。
 local DEEP_BLUE  = Color3.fromHex("#071D49") -- 统一深蓝底色
 local BLUE       = Color3.fromHex("#0E3A8F") -- 仅选中项轻微加亮的深蓝
+local PURE_BLUE  = Color3.fromHex("#146CFF") -- 主按钮亮蓝
+local DARK_BLUE  = Color3.fromHex("#0D47A1") -- 主按钮深蓝收边
 local CYAN       = Color3.fromHex("#00E5FF") -- 边框亮青高光
 local LIGHT_CYAN = Color3.fromHex("#CFF8FF") -- 浅青文字流光
 local WHITE      = Color3.fromHex("#FFFFFF") -- 正文与边框主色
@@ -116,8 +118,8 @@ WindUI:AddTheme({
         ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 90 }),
     Button = WindUI:Gradient({
-        ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
-        ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
+        ["0"]   = { Color = PURE_BLUE, Transparency = 0 },
+        ["100"] = { Color = DARK_BLUE, Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
         ["0"]   = { Color = WHITE, Transparency = 0 },
@@ -1388,7 +1390,7 @@ do
 end
 
 -- ================================================================
--- 深蓝底色修正：移除偏紫的亮蓝中点色，背景与按钮统一 #071D49；
--- 仅 Accent 使用 #0E3A8F 做轻微选中高亮，白字、白色边框与黑曜主题保持不变。
--- 文件交付时间：2026年11月27日 20:53:17（UTC+8）
-
+-- 确认按钮修订：以 2026年11月27日 20:53:17（UTC+8）版本为基准；
+-- 仅将芙宁娜主题 Button（对话框 Primary / 确定按钮底色）改为亮蓝 → 深蓝渐变，
+-- 对话框深蓝背景、取消按钮、白色文字、白色边框与黑曜主题均保持不变。
+-- 文件交付时间：2026年11月27日 21:28:05（UTC+8）
