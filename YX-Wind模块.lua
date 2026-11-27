@@ -10,8 +10,13 @@ local THEME_FOLDER = "YX-HUB"
 local THEME_FILE   = THEME_FOLDER .. "/yx_last_theme.txt"
 
 local ALLOWED_THEMES = { "芙宁娜", "黑曜" }
+local ALLOWED_THEME_SET = {}
+for _, name in ipairs(ALLOWED_THEMES) do
+    ALLOWED_THEME_SET[name] = true
+end
+
 local function isAllowedTheme(name)
-    return type(name) == "string" and table.find(ALLOWED_THEMES, name) ~= nil
+    return type(name) == "string" and ALLOWED_THEME_SET[name] == true
 end
 
 local ThemeMemory = {}
@@ -40,6 +45,10 @@ do
 end
 
 local savedTheme = ThemeMemory.load() or "芙宁娜"
+
+-- 芙宁娜主题严格限定为青 / 白两色；全局复用，避免色值不一致。
+local CYAN  = Color3.fromHex("#00E5FF")
+local WHITE = Color3.fromHex("#FFFFFF")
 
 local THEME_BACKGROUNDS = {
     ["芙宁娜"] = {
@@ -87,34 +96,34 @@ local onUserCardClick = function() end
 WindUI:AddTheme({
     Name = "芙宁娜",
     Accent = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#00E5FF"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#00B0FF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#2979FF"), Transparency = 0 },
+        ["0"]   = { Color = CYAN,  Transparency = 0 },
+        ["50"]  = { Color = WHITE, Transparency = 0 },
+        ["100"] = { Color = CYAN,  Transparency = 0 },
     }, { Rotation = 45 }),
-    Dialog = Color3.fromHex("#0D2438"),
-    Outline = Color3.fromHex("#448AFF"),
-    Text = Color3.fromHex("#FFFFFF"),
+    Dialog = CYAN,
+    Outline = WHITE,
+    Text = WHITE,
     Placeholder = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#80D8FF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#B3E5FC"), Transparency = 0 },
+        ["0"]   = { Color = WHITE, Transparency = 0 },
+        ["100"] = { Color = CYAN,  Transparency = 0 },
     }, { Rotation = 0 }),
     Background = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#0A1929"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#0D2137"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#10293F"), Transparency = 0 },
+        ["0"]   = { Color = CYAN,  Transparency = 0 },
+        ["50"]  = { Color = WHITE, Transparency = 0 },
+        ["100"] = { Color = CYAN,  Transparency = 0 },
     }, { Rotation = 90 }),
     Button = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#448AFF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#0D47A1"), Transparency = 0 },
+        ["0"]   = { Color = WHITE, Transparency = 0 },
+        ["100"] = { Color = CYAN,  Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = Color3.fromHex("#00FFFF"), Transparency = 0 },
-        ["50"]  = { Color = Color3.fromHex("#E0FFFF"), Transparency = 0 },
-        ["100"] = { Color = Color3.fromHex("#FFFFFF"), Transparency = 0 },
+        ["0"]   = { Color = CYAN,  Transparency = 0 },
+        ["50"]  = { Color = WHITE, Transparency = 0 },
+        ["100"] = { Color = CYAN,  Transparency = 0 },
     }, { Rotation = 135 }),
 })
 
--- 黑曜：黑 / 白 / 灰 + 冷色调 + 偏暗黑系
+-- 黑曜：黑 / 白 / 灰 + 冷色调 + 偏暗黑系（保持原配色）
 WindUI:AddTheme({
     Name = "黑曜",
     Accent = WindUI:Gradient({
@@ -251,11 +260,10 @@ local YXTheme = (function()
     end
 
     local function dispatch(name)
+        if type(name) ~= "string" or name == "" or name == lastName then return end
         lastName = name
         for _, fn in ipairs(listeners) do
-            task.spawn(function()
-                pcall(fn, name)
-            end)
+            task.spawn(fn, name)
         end
     end
 
@@ -293,12 +301,12 @@ local YXTheme = (function()
 
     local PALETTES = {
         ["芙宁娜"] = {
-            waveA = Color3.fromHex("#00E5FF"), waveB = Color3.fromHex("#FFFFFF"),
-            gradEdge = Color3.fromHex("#FFFFFF"), gradMid = Color3.fromHex("#00B0FF"),
-            tagA = Color3.fromHex("#00E5FF"), tagMid = Color3.fromHex("#2979FF"), tagB = Color3.fromHex("#00E5FF"),
-            openBtnBg = Color3.fromHex("#0D2438"),
-            btnGradA = Color3.fromHex("#FFFFFF"), btnGradB = Color3.fromHex("#2979FF"),
-            textFlowA = Color3.fromRGB(72, 219, 251), textFlowB = Color3.fromHex("#FFFFFF"),
+            waveA = CYAN, waveB = WHITE,
+            gradEdge = WHITE, gradMid = CYAN,
+            tagA = CYAN, tagMid = WHITE, tagB = CYAN,
+            openBtnBg = CYAN,
+            btnGradA = WHITE, btnGradB = CYAN,
+            textFlowA = CYAN, textFlowB = WHITE,
         },
         ["黑曜"] = {
             -- 标签页边框流动：白主色 + 黑带（与文字流光黑白一致）；其余静态渐变仍用下方冷灰
@@ -321,19 +329,26 @@ local YXTheme = (function()
 
     local function getPalette()
         local name = getName()
-        if paletteCache[name] then return paletteCache[name] end
+        local cached = paletteCache[name]
+        if cached then return cached end
 
-        local p = PALETTES[name]
-        if not p then
+        local p = {}
+        local source = PALETTES[name]
+        if source then
+            -- 返回独立副本，避免写入 openBtnText 时污染共享配色表。
+            for key, value in pairs(source) do
+                p[key] = value
+            end
+        else
             local theme = getTable()
-            local main = Color3.fromHex("#00B0FF")
+            local main = CYAN
             if theme and WindUI.Creator and type(WindUI.Creator.GetThemeProperty) == "function" then
                 local ok, c = pcall(function()
                     return WindUI.Creator:GetThemeProperty("Outline", theme)
                 end)
                 if ok and typeof(c) == "Color3" then main = c end
             end
-            local white = Color3.fromHex("#FFFFFF")
+            local white = WHITE
             p = {
                 waveA = main, waveB = white,
                 gradEdge = white, gradMid = main,
@@ -364,7 +379,8 @@ do
     local RunService = game:GetService("RunService")
     local borders = {}
     local Speed = 120
-    local last = os.clock()
+    local INTERVAL = 1 / 30
+    local acc = 0
 
     local function gradient()
         local p = YXTheme.getPalette()
@@ -434,10 +450,13 @@ do
         end
     end)
 
-    RunService.Heartbeat:Connect(function()
-        local now = os.clock()
-        local dt = now - last
-        last = now
+    RunService.Heartbeat:Connect(function(dt)
+        acc = acc + dt
+        if acc < INTERVAL then return end
+        local step = acc
+        acc = 0
+        local pulse = math.sin(os.clock() * 3) * 0.4
+
         for border, r in pairs(borders) do
             local alive = border.Parent ~= nil
             if alive and r.fitTo then
@@ -450,20 +469,24 @@ do
                     local w, h = f.AbsoluteSize.X, f.AbsoluteSize.Y
                     if w >= 40 and h >= 40 then
                         local host = border.Parent
-                        border.Size = UDim2.fromOffset(w, h)
-                        border.Position = UDim2.fromOffset(
-                            f.AbsolutePosition.X - host.AbsolutePosition.X,
-                            f.AbsolutePosition.Y - host.AbsolutePosition.Y)
-                        border.Visible = true
+                        if host then
+                            border.Size = UDim2.fromOffset(w, h)
+                            border.Position = UDim2.fromOffset(
+                                f.AbsolutePosition.X - host.AbsolutePosition.X,
+                                f.AbsolutePosition.Y - host.AbsolutePosition.Y)
+                            border.Visible = true
+                        else
+                            alive = false
+                        end
                     else
                         border.Visible = false
                     end
                 end
             end
             if alive then
-                r.grad.Rotation = (r.grad.Rotation + Speed * dt) % 360
+                r.grad.Rotation = (r.grad.Rotation + Speed * step) % 360
                 if r.pulse then
-                    r.stroke.Thickness = r.thickness + math.sin(now * 3) * 0.4
+                    r.stroke.Thickness = r.thickness + pulse
                 end
             else
                 borders[border] = nil
@@ -501,6 +524,10 @@ if not WindUI then
 end
 
 local Window = _G.Window
+if not Window then
+    error("YX-Beautify: 未找到 _G.Window。请先创建主窗口后再加载此模块！")
+end
+
 local YXTheme = _G.YXTheme
 local addGradientBorder = _G.addGradientBorder
 local wallpaperFor = _G.wallpaperFor
@@ -550,20 +577,9 @@ do
         preloaded[asset] = true
 
         task.spawn(function()
+            -- ContentProvider 已负责预加载，不再创建永久残留的隐藏 ImageLabel。
             pcall(function()
                 game:GetService("ContentProvider"):PreloadAsync({ asset })
-            end)
-            pcall(function()
-                local gui = WindUI.ScreenGui
-                if not gui then return end
-                local probe = Instance.new("ImageLabel")
-                probe.Name = "YXThemePreload"
-                probe.Image = asset
-                probe.Size = UDim2.fromOffset(1, 1)
-                probe.Position = UDim2.fromOffset(-20, -20)
-                probe.BackgroundTransparency = 1
-                probe.BorderSizePixel = 0
-                probe.Parent = gui
             end)
         end)
     end
@@ -591,30 +607,39 @@ do
 
         task.spawn(function()
             local folder = Window.Folder or "Temp"
-            local path = folder .. "/assets/." .. sanitize(url) .. "-" .. urlHash(url) .. extension(url)
+            local assetFolder = folder .. "/assets"
+            local path = assetFolder .. "/." .. sanitize(url) .. "-" .. urlHash(url) .. extension(url)
 
             pcall(function()
+                if isfolder and makefolder then
+                    if not isfolder(folder) then makefolder(folder) end
+                    if not isfolder(assetFolder) then makefolder(assetFolder) end
+                end
+
                 if isfile and not isfile(path) then
                     local body
                     if game.HttpGet then
                         body = game:HttpGet(url)
                     elseif WindUI.Creator and WindUI.Creator.Request then
-                        body = WindUI.Creator.Request({
+                        local response = WindUI.Creator.Request({
                             Url = url,
                             Method = "GET",
                             Headers = { ["User-Agent"] = "Roblox/Exploit" },
-                        }).Body
+                        })
+                        body = response and response.Body
                     end
-                    if body and writefile then
+                    if type(body) == "string" and #body > 0 and writefile then
                         writefile(path, body)
                     end
                 end
             end)
 
             local asset = nil
-            if getcustomasset then
+            if getcustomasset and (not isfile or isfile(path)) then
                 local ok, result = pcall(getcustomasset, path)
-                if ok then asset = result end
+                if ok and type(result) == "string" and result ~= "" then
+                    asset = result
+                end
             end
             if not asset then asset = url end
 
@@ -704,7 +729,7 @@ do
     end)
 
     task.spawn(function()
-        while task.wait(0.15) do
+        while task.wait(0.25) do
             local name = YXTheme.getName()
             if name ~= appliedTheme then
                 applyBackground(name)
@@ -731,7 +756,7 @@ do
     local SEQ_STEPS = 60
     local INTERVAL  = 1 / 30
 
-    -- 每帧重建色序：一道高光带沿边框流动（配色跟随主题 waveA/waveB：芙宁娜青白、黑曜黑白），Rotation 固定 0，不旋转方向
+    -- 按 30 Hz 更新缓存色序：一道高光带沿边框流动（配色跟随主题 waveA/waveB：芙宁娜青白、黑曜黑白），Rotation 固定 0，不旋转方向
     local function flowSequence(p, phase)
         local a, b = p.waveA, p.waveB
         local keys = {}
@@ -783,20 +808,23 @@ do
 
     local known = {}
     local function scan()
-        for index, tab in pairs(Window.TabModule.Tabs) do
-            if not known[index] then
+        local tabModule = Window.TabModule
+        local tabs = tabModule and tabModule.Tabs
+        if type(tabs) ~= "table" then return end
+
+        for index, tab in pairs(tabs) do
+            -- UI 尚未就绪时保留重试机会，不再提前标记为已处理。
+            if not known[index] and tab.UIElements and tab.UIElements.Main then
+                addBorder(tab.UIElements.Main)
                 known[index] = true
-                if tab.UIElements and tab.UIElements.Main then
-                    addBorder(tab.UIElements.Main)
-                end
             end
         end
     end
 
     scan()
 
-    -- 每帧重建色序推进流动（降频 30fps + 色序缓存，Rotation 恒为 0 不旋转）
-    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
+    -- 色序按 30 Hz 推进并缓存（Rotation 恒为 0，不旋转）
+    local phase, acc, lastQ = 0, 0, -1
     local seqCache = {}
 
     -- 缓存 key 带配色签名：切主题后 waveA/waveB 变化，旧色序自动失效并重建（同模块9修法）
@@ -812,19 +840,30 @@ do
 
     -- 主题切换时立即刷新，并重置 lastQ 强制心跳下一帧用新配色（避免被 q==lastQ 节流跳过）
     YXTheme.onChange(function()
+        for key in pairs(seqCache) do
+            seqCache[key] = nil
+        end
         local seq = flowSequence(YXTheme.getPalette(), 0)
         for border, grad in pairs(borders) do
-            if grad.Parent then grad.Color = seq end
+            if grad.Parent then
+                grad.Color = seq
+            else
+                borders[border] = nil
+            end
         end
         lastQ = -1
     end)
 
-    RunService.Heartbeat:Connect(function()
-        scan()
-        local now = os.clock()
-        local dt  = now - last
-        last = now
-        acc  = acc + dt
+    local scanAcc = 0
+    RunService.Heartbeat:Connect(function(dt)
+        -- 新标签页只需低频扫描；动画本身仍独立保持 30 Hz。
+        scanAcc = scanAcc + dt
+        if scanAcc >= 0.25 then
+            scanAcc = 0
+            scan()
+        end
+
+        acc = acc + dt
         if acc < INTERVAL then return end
         local step = acc
         acc = 0
@@ -833,6 +872,7 @@ do
         local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
         if q == lastQ then return end
         lastQ = q
+        if next(borders) == nil then return end
 
         local seq = getSequence(YXTheme.getPalette(), q)
         for border, grad in pairs(borders) do
@@ -885,14 +925,23 @@ do
         if stroke then
             local Speed = 120
             local baseThickness = 4
-            task.spawn(function()
-                local rot = 0
-                while btn.Parent do
-                    local dt = RunService.RenderStepped:Wait()
-                    rot = (rot + Speed * dt) % 360
-                    if grad then grad.Rotation = rot end
-                    stroke.Thickness = baseThickness + math.sin(os.clock() * 3) * 0.4
+            local INTERVAL = 1 / 30
+            local rot, acc = 0, 0
+            local connection
+            connection = RunService.Heartbeat:Connect(function(dt)
+                if not btn.Parent or not stroke.Parent then
+                    connection:Disconnect()
+                    return
                 end
+
+                acc = acc + dt
+                if acc < INTERVAL then return end
+                local step = acc
+                acc = 0
+
+                rot = (rot + Speed * step) % 360
+                if grad and grad.Parent then grad.Rotation = rot end
+                stroke.Thickness = baseThickness + math.sin(os.clock() * 3) * 0.4
             end)
         end
     end
@@ -1037,7 +1086,7 @@ do
     local function applyGradient(tagFrame)
         if not tagFrame or tagFrame:FindFirstChild("TagGrad") then return end
 
-        tagFrame.ImageColor3 = Color3.new(1, 1, 1)
+        tagFrame.ImageColor3 = WHITE
 
         local grad = Instance.new("UIGradient")
         grad.Name = "TagGrad"
@@ -1076,17 +1125,21 @@ do
     end)
 
     local Speed = 120
-    local last = os.clock()
+    local INTERVAL = 1 / 30
+    local acc = 0
 
-    RunService.Heartbeat:Connect(function()
-        local now = os.clock()
-        local dt = now - last
-        last = now
+    RunService.Heartbeat:Connect(function(dt)
+        acc = acc + dt
+        if acc < INTERVAL then return end
+        local step = acc
+        acc = 0
 
         for grad, frame in pairs(tagGrads) do
             if grad.Parent then
-                grad.Rotation = (grad.Rotation + Speed * dt) % 360
-                frame.ImageColor3 = Color3.new(1, 1, 1)
+                grad.Rotation = (grad.Rotation + Speed * step) % 360
+                if frame.ImageColor3 ~= WHITE then
+                    frame.ImageColor3 = WHITE
+                end
             else
                 tagGrads[grad] = nil
             end
@@ -1153,7 +1206,7 @@ end
 
 -- ==========================================
 -- 9. 标题 / 署名 / 打开按钮 Title 文字流光渐变（跟随主题配色）
---    每帧重建 ColorSequence，一道高光带沿文字循环扫过，Rotation 恒 0 不旋转。
+--    按 30 Hz 更新缓存 ColorSequence，高光带沿文字循环扫过，Rotation 恒 0 不旋转。
 --    配色取自 PALETTES.textFlowA/textFlowB：芙宁娜=青→白，黑曜=白→黑。
 --    模块 3 / 5 通过 YXFlowText 属性跳过这三处文字。
 -- ==========================================
@@ -1163,9 +1216,7 @@ do
     local FLOW_ATTR = "YXFlowText"
     local GRAD_NAME = "YXTextFlow"
 
-    local CYAN       = Color3.fromRGB(72, 219, 251)
-    local WHITE      = Color3.new(1, 1, 1)
-    local WHITE_BASE = Color3.new(1, 1, 1)
+    local WHITE_BASE = WHITE
 
     local STEPS     = 12
     local SPEED     = 0.35
@@ -1266,18 +1317,26 @@ do
         end
     end)
 
-    local phase, acc, lastQ, last = 0, 0, -1, os.clock()
+    local phase, acc, lastQ = 0, 0, -1
 
-    -- 主题切换后强制刷新一次流光色序（否则 q 不变时会被节流跳过，看不到换色）
+    -- 主题切换后立即换色并清理旧色序，避免缓存增长或残留上一主题颜色。
     YXTheme.onChange(function()
+        for key in pairs(seqCache) do
+            seqCache[key] = nil
+        end
+        local seq = getSequence(0)
+        for grad in pairs(flows) do
+            if grad.Parent then
+                grad.Color = seq
+            else
+                flows[grad] = nil
+            end
+        end
         lastQ = -1
     end)
 
-    RunService.Heartbeat:Connect(function()
-        local now = os.clock()
-        local dt  = now - last
-        last = now
-        acc  = acc + dt
+    RunService.Heartbeat:Connect(function(dt)
+        acc = acc + dt
         if acc < INTERVAL then return end
         local step = acc
         acc = 0
@@ -1286,6 +1345,7 @@ do
         local q = math.floor(phase * SEQ_STEPS + 0.5) % SEQ_STEPS
         if q == lastQ then return end
         lastQ = q
+        if next(flows) == nil then return end
 
         local seq = getSequence(q)
         for grad in pairs(flows) do
@@ -1298,4 +1358,8 @@ do
     end)
 end
 
--- YX-WindUI 主题库（深蓝科技风芙宁娜 + 黑曜暗黑冷灰主题 + 双壁纸 + 青蓝边框 + 打开按钮边框加粗基准4 + 标签页颜色流动不旋转）+ 美化模块 融合版 生成时间：11月21日00时36分（本次：修复模块2标签页边框切主题残留——色序缓存key加入waveA/waveB配色签名、切主题重置lastQ强制刷新，不再闪回芙宁娜青白；其余模块与配色未改）
+-- ================================================================
+-- 本次优化：芙宁娜主题全部配色统一为青 / 白，黑曜主题配色保持不变。
+-- 性能与稳定性：主题事件去重、配色缓存隔离、动画统一 30 Hz、标签页低频扫描、
+-- 资源目录自动创建、预加载不再残留隐藏 GUI、动画连接自动断开并清理失效对象。
+-- 文件交付时间：2026年11月27日 20:28:49（UTC+8）
