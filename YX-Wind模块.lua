@@ -46,9 +46,11 @@ end
 
 local savedTheme = ThemeMemory.load() or "芙宁娜"
 
--- 芙宁娜主题严格限定为青 / 白两色；全局复用，避免色值不一致。
-local CYAN  = Color3.fromHex("#00E5FF")
-local WHITE = Color3.fromHex("#FFFFFF")
+-- 芙宁娜主题仅使用青色系与白色，通过深青 / 亮青 / 浅青拉开对比度。
+local DEEP_CYAN  = Color3.fromHex("#003F46") -- 正文、标题重点色：亮壁纸上仍清晰
+local CYAN       = Color3.fromHex("#00E5FF") -- 边框与动态高光
+local LIGHT_CYAN = Color3.fromHex("#CFF8FF") -- 控件浅底，避免与正文同色
+local WHITE      = Color3.fromHex("#FFFFFF")
 
 local THEME_BACKGROUNDS = {
     ["芙宁娜"] = {
@@ -100,26 +102,26 @@ WindUI:AddTheme({
         ["50"]  = { Color = WHITE, Transparency = 0 },
         ["100"] = { Color = CYAN,  Transparency = 0 },
     }, { Rotation = 45 }),
-    Dialog = CYAN,
-    Outline = WHITE,
-    Text = WHITE,
+    Dialog = WHITE,
+    Outline = DEEP_CYAN,
+    Text = DEEP_CYAN,
     Placeholder = WindUI:Gradient({
-        ["0"]   = { Color = WHITE, Transparency = 0 },
-        ["100"] = { Color = CYAN,  Transparency = 0 },
+        ["0"]   = { Color = DEEP_CYAN, Transparency = 0 },
+        ["100"] = { Color = CYAN,      Transparency = 0 },
     }, { Rotation = 0 }),
     Background = WindUI:Gradient({
-        ["0"]   = { Color = CYAN,  Transparency = 0 },
-        ["50"]  = { Color = WHITE, Transparency = 0 },
-        ["100"] = { Color = CYAN,  Transparency = 0 },
+        ["0"]   = { Color = WHITE,      Transparency = 0 },
+        ["50"]  = { Color = LIGHT_CYAN, Transparency = 0 },
+        ["100"] = { Color = WHITE,      Transparency = 0 },
     }, { Rotation = 90 }),
     Button = WindUI:Gradient({
-        ["0"]   = { Color = WHITE, Transparency = 0 },
-        ["100"] = { Color = CYAN,  Transparency = 0 },
+        ["0"]   = { Color = WHITE,      Transparency = 0 },
+        ["100"] = { Color = LIGHT_CYAN, Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = CYAN,  Transparency = 0 },
-        ["50"]  = { Color = WHITE, Transparency = 0 },
-        ["100"] = { Color = CYAN,  Transparency = 0 },
+        ["0"]   = { Color = DEEP_CYAN, Transparency = 0 },
+        ["50"]  = { Color = CYAN,      Transparency = 0 },
+        ["100"] = { Color = DEEP_CYAN, Transparency = 0 },
     }, { Rotation = 135 }),
 })
 
@@ -301,12 +303,13 @@ local YXTheme = (function()
 
     local PALETTES = {
         ["芙宁娜"] = {
-            waveA = CYAN, waveB = WHITE,
-            gradEdge = WHITE, gradMid = CYAN,
-            tagA = CYAN, tagMid = WHITE, tagB = CYAN,
-            openBtnBg = CYAN,
-            btnGradA = WHITE, btnGradB = CYAN,
-            textFlowA = CYAN, textFlowB = WHITE,
+            -- 动态元素使用深青 ↔ 亮青，避免白色高光在壁纸上消失。
+            waveA = DEEP_CYAN, waveB = CYAN,
+            gradEdge = DEEP_CYAN, gradMid = CYAN,
+            tagA = DEEP_CYAN, tagMid = CYAN, tagB = DEEP_CYAN,
+            openBtnBg = WHITE,
+            btnGradA = CYAN, btnGradB = DEEP_CYAN,
+            textFlowA = DEEP_CYAN, textFlowB = CYAN,
         },
         ["黑曜"] = {
             -- 标签页边框流动：白主色 + 黑带（与文字流光黑白一致）；其余静态渐变仍用下方冷灰
@@ -1207,7 +1210,7 @@ end
 -- ==========================================
 -- 9. 标题 / 署名 / 打开按钮 Title 文字流光渐变（跟随主题配色）
 --    按 30 Hz 更新缓存 ColorSequence，高光带沿文字循环扫过，Rotation 恒 0 不旋转。
---    配色取自 PALETTES.textFlowA/textFlowB：芙宁娜=青→白，黑曜=白→黑。
+--    配色取自 PALETTES.textFlowA/textFlowB：芙宁娜=深青→亮青，黑曜=白→黑。
 --    模块 3 / 5 通过 YXFlowText 属性跳过这三处文字。
 -- ==========================================
 do
@@ -1359,7 +1362,6 @@ do
 end
 
 -- ================================================================
--- 本次优化：芙宁娜主题全部配色统一为青 / 白，黑曜主题配色保持不变。
--- 性能与稳定性：主题事件去重、配色缓存隔离、动画统一 30 Hz、标签页低频扫描、
--- 资源目录自动创建、预加载不再残留隐藏 GUI、动画连接自动断开并清理失效对象。
--- 文件交付时间：2026年11月27日 20:28:49（UTC+8）
+-- 高对比修订：芙宁娜正文改为深青，背景与按钮改为白 / 浅青，动态高光改为深青 / 亮青。
+-- 目的：解决亮青白壁纸与文字颜色重合的问题；黑曜主题配色及既有功能保持不变。
+-- 文件交付时间：2026年11月27日 20:35:28（UTC+8）
