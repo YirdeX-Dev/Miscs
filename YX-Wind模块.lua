@@ -46,10 +46,10 @@ end
 
 local savedTheme = ThemeMemory.load() or "芙宁娜"
 
--- 芙宁娜：白字 + 白色边框，以深蓝 / 纯蓝衬底，浅青与亮青作为高光。
-local DEEP_BLUE  = Color3.fromHex("#071D49") -- 深色衬底与文字描边，不使用深青色
-local BLUE       = Color3.fromHex("#175CFF") -- 纯蓝过渡色
-local CYAN       = Color3.fromHex("#00E5FF") -- 亮青高光
+-- 芙宁娜：白字 + 白色边框，统一深蓝底色；浅青与亮青只用于文字流光。
+local DEEP_BLUE  = Color3.fromHex("#071D49") -- 统一深蓝底色
+local BLUE       = Color3.fromHex("#0E3A8F") -- 仅选中项轻微加亮的深蓝
+local CYAN       = Color3.fromHex("#00E5FF") -- 边框亮青高光
 local LIGHT_CYAN = Color3.fromHex("#CFF8FF") -- 浅青文字流光
 local WHITE      = Color3.fromHex("#FFFFFF") -- 正文与边框主色
 
@@ -101,7 +101,7 @@ WindUI:AddTheme({
     Accent = WindUI:Gradient({
         ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
         ["50"]  = { Color = BLUE,      Transparency = 0 },
-        ["100"] = { Color = CYAN,      Transparency = 0 },
+        ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 45 }),
     Dialog = DEEP_BLUE,
     Outline = WHITE,
@@ -112,12 +112,12 @@ WindUI:AddTheme({
     }, { Rotation = 0 }),
     Background = WindUI:Gradient({
         ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
-        ["50"]  = { Color = BLUE,      Transparency = 0 },
+        ["50"]  = { Color = DEEP_BLUE, Transparency = 0 },
         ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 90 }),
     Button = WindUI:Gradient({
         ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
-        ["100"] = { Color = BLUE,      Transparency = 0 },
+        ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
         ["0"]   = { Color = WHITE, Transparency = 0 },
@@ -1388,7 +1388,6 @@ do
 end
 
 -- ================================================================
--- 白字白边修订：正文固定白色，所有动态边框包含白色，不再使用深青色。
--- 对比方案：深蓝 / 纯蓝衬底，白字加深蓝描边，流光为白 / 浅青，芙宁娜壁纸轻压暗 18%。
--- 黑曜主题配色与原有功能保持不变。
--- 文件交付时间：2026年11月27日 20:45:00（UTC+8）
+-- 深蓝底色修正：移除偏紫的亮蓝中点色，背景与按钮统一 #071D49；
+-- 仅 Accent 使用 #0E3A8F 做轻微选中高亮，白字、白色边框与黑曜主题保持不变。
+-- 文件交付时间：2026年11月27日 20:53:17（UTC+8）
