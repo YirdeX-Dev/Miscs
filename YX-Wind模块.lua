@@ -117,7 +117,10 @@ WindUI:AddTheme({
         ["50"]  = { Color = DEEP_BLUE, Transparency = 0 },
         ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 90 }),
-    Button = Color3.fromHex("#1dd4f0"),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = PURE_BLUE, Transparency = 0 },
+        ["100"] = { Color = DARK_BLUE, Transparency = 0 },
+    }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
         ["0"]   = { Color = WHITE, Transparency = 0 },
         ["50"]  = { Color = CYAN,  Transparency = 0 },
@@ -145,7 +148,10 @@ WindUI:AddTheme({
         ["50"]  = { Color = Color3.fromHex("#131519"), Transparency = 0 },
         ["100"] = { Color = Color3.fromHex("#1C1F24"), Transparency = 0 },
     }, { Rotation = 90 }),
-    Button = Color3.fromHex("#1dd4f0"),
+    Button = WindUI:Gradient({
+        ["0"]   = { Color = Color3.fromHex("#5F6368"), Transparency = 0 },
+        ["100"] = { Color = Color3.fromHex("#2A2D31"), Transparency = 0 },
+    }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
         ["0"]   = { Color = Color3.fromHex("#E8EAED"), Transparency = 0 },
         ["50"]  = { Color = Color3.fromHex("#B8BDC2"), Transparency = 0 },
