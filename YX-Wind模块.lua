@@ -46,11 +46,12 @@ end
 
 local savedTheme = ThemeMemory.load() or "芙宁娜"
 
--- 芙宁娜主题仅使用青色系与白色，通过深青 / 亮青 / 浅青拉开对比度。
-local DEEP_CYAN  = Color3.fromHex("#003F46") -- 正文、标题重点色：亮壁纸上仍清晰
-local CYAN       = Color3.fromHex("#00E5FF") -- 边框与动态高光
-local LIGHT_CYAN = Color3.fromHex("#CFF8FF") -- 控件浅底，避免与正文同色
-local WHITE      = Color3.fromHex("#FFFFFF")
+-- 芙宁娜：白字 + 白色边框，以深蓝 / 纯蓝衬底，浅青与亮青作为高光。
+local DEEP_BLUE  = Color3.fromHex("#071D49") -- 深色衬底与文字描边，不使用深青色
+local BLUE       = Color3.fromHex("#175CFF") -- 纯蓝过渡色
+local CYAN       = Color3.fromHex("#00E5FF") -- 亮青高光
+local LIGHT_CYAN = Color3.fromHex("#CFF8FF") -- 浅青文字流光
+local WHITE      = Color3.fromHex("#FFFFFF") -- 正文与边框主色
 
 local THEME_BACKGROUNDS = {
     ["芙宁娜"] = {
@@ -98,30 +99,30 @@ local onUserCardClick = function() end
 WindUI:AddTheme({
     Name = "芙宁娜",
     Accent = WindUI:Gradient({
-        ["0"]   = { Color = CYAN,  Transparency = 0 },
-        ["50"]  = { Color = WHITE, Transparency = 0 },
-        ["100"] = { Color = CYAN,  Transparency = 0 },
-    }, { Rotation = 45 }),
-    Dialog = WHITE,
-    Outline = DEEP_CYAN,
-    Text = DEEP_CYAN,
-    Placeholder = WindUI:Gradient({
-        ["0"]   = { Color = DEEP_CYAN, Transparency = 0 },
+        ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
+        ["50"]  = { Color = BLUE,      Transparency = 0 },
         ["100"] = { Color = CYAN,      Transparency = 0 },
+    }, { Rotation = 45 }),
+    Dialog = DEEP_BLUE,
+    Outline = WHITE,
+    Text = WHITE,
+    Placeholder = WindUI:Gradient({
+        ["0"]   = { Color = LIGHT_CYAN, Transparency = 0 },
+        ["100"] = { Color = WHITE,      Transparency = 0 },
     }, { Rotation = 0 }),
     Background = WindUI:Gradient({
-        ["0"]   = { Color = WHITE,      Transparency = 0 },
-        ["50"]  = { Color = LIGHT_CYAN, Transparency = 0 },
-        ["100"] = { Color = WHITE,      Transparency = 0 },
+        ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
+        ["50"]  = { Color = BLUE,      Transparency = 0 },
+        ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 90 }),
     Button = WindUI:Gradient({
-        ["0"]   = { Color = WHITE,      Transparency = 0 },
-        ["100"] = { Color = LIGHT_CYAN, Transparency = 0 },
+        ["0"]   = { Color = DEEP_BLUE, Transparency = 0 },
+        ["100"] = { Color = BLUE,      Transparency = 0 },
     }, { Rotation = 135 }),
     Icon = WindUI:Gradient({
-        ["0"]   = { Color = DEEP_CYAN, Transparency = 0 },
-        ["50"]  = { Color = CYAN,      Transparency = 0 },
-        ["100"] = { Color = DEEP_CYAN, Transparency = 0 },
+        ["0"]   = { Color = WHITE, Transparency = 0 },
+        ["50"]  = { Color = CYAN,  Transparency = 0 },
+        ["100"] = { Color = WHITE, Transparency = 0 },
     }, { Rotation = 135 }),
 })
 
@@ -303,13 +304,13 @@ local YXTheme = (function()
 
     local PALETTES = {
         ["芙宁娜"] = {
-            -- 动态元素使用深青 ↔ 亮青，避免白色高光在壁纸上消失。
-            waveA = DEEP_CYAN, waveB = CYAN,
-            gradEdge = DEEP_CYAN, gradMid = CYAN,
-            tagA = DEEP_CYAN, tagMid = CYAN, tagB = DEEP_CYAN,
-            openBtnBg = WHITE,
-            btnGradA = CYAN, btnGradB = DEEP_CYAN,
-            textFlowA = DEEP_CYAN, textFlowB = CYAN,
+            -- 所有动态边框均含白色；文字流光为白 ↔ 浅青，并配深蓝描边。
+            waveA = WHITE, waveB = CYAN,
+            gradEdge = WHITE, gradMid = CYAN,
+            tagA = WHITE, tagMid = CYAN, tagB = WHITE,
+            openBtnBg = DEEP_BLUE,
+            btnGradA = WHITE, btnGradB = CYAN,
+            textFlowA = WHITE, textFlowB = LIGHT_CYAN,
         },
         ["黑曜"] = {
             -- 标签页边框流动：白主色 + 黑带（与文字流光黑白一致）；其余静态渐变仍用下方冷灰
@@ -706,6 +707,11 @@ do
             end
 
             if not img.Visible then img.Visible = true end
+            -- 深蓝底上轻压暗芙宁娜壁纸，让白字从复杂亮背景中分离；其他主题不处理。
+            local targetTransparency = themeName == "芙宁娜" and 0.18 or 0
+            if math.abs(img.ImageTransparency - targetTransparency) > 0.001 then
+                img.ImageTransparency = targetTransparency
+            end
             if img.Image ~= asset then
                 pcall(function()
                     img.Image = asset
@@ -992,6 +998,18 @@ do
 
         target = target or YXTheme.getTextColor()
 
+        -- 白字直接叠在亮壁纸上仍会丢失轮廓；芙宁娜使用深蓝描边，其他主题保持原逻辑。
+        if YXTheme.getName() == "芙宁娜" then
+            if inst.TextStrokeColor3 ~= DEEP_BLUE then
+                inst.TextStrokeColor3 = DEEP_BLUE
+            end
+            if math.abs(inst.TextStrokeTransparency - 0.25) > 0.001 then
+                inst.TextStrokeTransparency = 0.25
+            end
+        elseif inst.TextStrokeTransparency < 0.8 then
+            inst.TextStrokeTransparency = 0.85
+        end
+
         if inst.RichText and string.find(inst.Text, "<font color=", 1, true) then
             local hex = YXTheme.colorToHex(target)
             local text = inst.Text
@@ -1006,9 +1024,6 @@ do
         end
         if inst.TextTransparency ~= 0 then
             inst.TextTransparency = 0
-        end
-        if inst.TextStrokeTransparency < 0.8 then
-            inst.TextStrokeTransparency = 0.85
         end
         for _, child in ipairs(inst:GetChildren()) do
             if child:IsA("UIGradient") and child.Enabled then
@@ -1210,7 +1225,7 @@ end
 -- ==========================================
 -- 9. 标题 / 署名 / 打开按钮 Title 文字流光渐变（跟随主题配色）
 --    按 30 Hz 更新缓存 ColorSequence，高光带沿文字循环扫过，Rotation 恒 0 不旋转。
---    配色取自 PALETTES.textFlowA/textFlowB：芙宁娜=深青→亮青，黑曜=白→黑。
+--    配色取自 PALETTES.textFlowA/textFlowB：芙宁娜=白→浅青，黑曜=白→黑。
 --    模块 3 / 5 通过 YXFlowText 属性跳过这三处文字。
 -- ==========================================
 do
@@ -1255,12 +1270,22 @@ do
 
     local flows = {}
 
+    local function applyTextContrast(label)
+        if YXTheme.getName() == "芙宁娜" then
+            label.TextStrokeColor3 = DEEP_BLUE
+            label.TextStrokeTransparency = 0.25
+        elseif label.TextStrokeTransparency < 0.8 then
+            label.TextStrokeTransparency = 0.85
+        end
+    end
+
     local function attach(label)
         if not label or label:GetAttribute(FLOW_ATTR) then return end
         pcall(function() label:SetAttribute(FLOW_ATTR, true) end)
 
         label.TextColor3       = WHITE_BASE
         label.TextTransparency = 0
+        applyTextContrast(label)
 
         local grad = label:FindFirstChild(GRAD_NAME)
         if not grad or not grad:IsA("UIGradient") then
@@ -1328,9 +1353,10 @@ do
             seqCache[key] = nil
         end
         local seq = getSequence(0)
-        for grad in pairs(flows) do
+        for grad, label in pairs(flows) do
             if grad.Parent then
                 grad.Color = seq
+                applyTextContrast(label)
             else
                 flows[grad] = nil
             end
@@ -1362,6 +1388,7 @@ do
 end
 
 -- ================================================================
--- 高对比修订：芙宁娜正文改为深青，背景与按钮改为白 / 浅青，动态高光改为深青 / 亮青。
--- 目的：解决亮青白壁纸与文字颜色重合的问题；黑曜主题配色及既有功能保持不变。
--- 文件交付时间：2026年11月27日 20:35:28（UTC+8）
+-- 白字白边修订：正文固定白色，所有动态边框包含白色，不再使用深青色。
+-- 对比方案：深蓝 / 纯蓝衬底，白字加深蓝描边，流光为白 / 浅青，芙宁娜壁纸轻压暗 18%。
+-- 黑曜主题配色与原有功能保持不变。
+-- 文件交付时间：2026年11月27日 20:45:00（UTC+8）
