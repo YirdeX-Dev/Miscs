@@ -896,6 +896,85 @@ do
 end
 
 -- ==========================================
+-- 2b. 侧边栏章节组件边框（Window:Section）
+--     WindUI 的 Window:Section 对象未暴露框架引用，因此通过其固定结构识别：
+--     SectionFrame 直属 TextButton 标题行 + Content。边框跟随标题行，展开时不包住正文。
+-- ==========================================
+do
+    local main = Window.UIElements and Window.UIElements.Main
+    if not main then return end
+
+    local ATTACHED = "YXSectionHeaderBorderAttached"
+
+    local function looksLikeSidebarSection(holder)
+        if not (holder and holder:IsA("Frame") and holder.Parent) then return false end
+        local top = holder:FindFirstChildWhichIsA("TextButton", false)
+        local content = holder:FindFirstChild("Content", false)
+        return top ~= nil and content ~= nil and content:IsA("Frame")
+    end
+
+    local function attach(holder)
+        if not looksLikeSidebarSection(holder) then return end
+        if holder:GetAttribute(ATTACHED) then return end
+
+        local top = holder:FindFirstChildWhichIsA("TextButton", false)
+        if not top then return end
+
+        pcall(function() holder:SetAttribute(ATTACHED, true) end)
+        addGradientBorder(holder, {
+            name = "YXSectionHeaderBorder",
+            radius = 10,
+            thickness = 2,
+            pulse = false,
+            fitTo = top,
+        })
+    end
+
+    local function scanSections()
+        for _, desc in ipairs(main:GetDescendants()) do
+            attach(desc)
+        end
+    end
+
+    -- 已创建的章节。
+    scanSections()
+
+    -- 延迟几轮，兼容 Section 的 Content / TextButton 分批实例化。
+    task.defer(scanSections)
+    task.delay(0.2, scanSections)
+
+    -- 后续动态创建的章节：只检查新增对象及其父级，避免每个 UI 创建都全量扫描窗口。
+    local function inspectCandidate(inst)
+        attach(inst)
+        if inst and inst.Parent then
+            attach(inst.Parent)
+        end
+    end
+
+    main.DescendantAdded:Connect(function(desc)
+        task.defer(inspectCandidate, desc)
+    end)
+
+    -- 如果主脚本在主题模块之后才调用 Window:Section，包装原函数继续覆盖新章节。
+    pcall(function()
+        local rawSection = Window.Section
+        if type(rawSection) == "function" and not rawSection.__YXSectionHeaderBorderWrapped then
+            local wrapper = function(self, ...)
+                local results = table.pack(rawSection(self, ...))
+                task.defer(function()
+                    task.wait()
+                    scanSections()
+                end)
+                task.delay(0.2, scanSections)
+                return table.unpack(results, 1, results.n)
+            end
+            wrapper.__YXSectionHeaderBorderWrapped = true
+            Window.Section = wrapper
+        end
+    end)
+end
+
+-- ==========================================
 -- 3. 打开按钮模块
 -- ==========================================
 do
@@ -1388,6 +1467,6 @@ do
 end
 
 -- ================================================================
--- 深蓝底色修正：移除偏紫的亮蓝中点色，背景与按钮统一 #071D49；
--- 仅 Accent 使用 #0E3A8F 做轻微选中高亮，白字、白色边框与黑曜主题保持不变。
--- 文件交付时间：2026年11月27日 20:53:17（UTC+8）
+-- 章节边框修订：为 Window:Section 的标题行添加白 / 亮青流动渐变边框；
+-- 已存在与后续动态创建的章节均自动处理，章节展开、收起时边框继续跟随标题行。
+-- 文件交付时间：2026年11月27日 21:11:55（UTC+8）
