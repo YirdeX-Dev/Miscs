@@ -117,10 +117,7 @@ WindUI:AddTheme({
         ["50"]  = { Color = DEEP_BLUE, Transparency = 0 },
         ["100"] = { Color = DEEP_BLUE, Transparency = 0 },
     }, { Rotation = 90 }),
-    Button = WindUI:Gradient({
-        ["0"]   = { Color = PURE_BLUE, Transparency = 0 },
-        ["100"] = { Color = DARK_BLUE, Transparency = 0 },
-    }, { Rotation = 135 }),
+    Button = Color3.fromHex("#1dd4f0"),
     Icon = WindUI:Gradient({
         ["0"]   = { Color = WHITE, Transparency = 0 },
         ["50"]  = { Color = CYAN,  Transparency = 0 },
