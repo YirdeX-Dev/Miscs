@@ -19,6 +19,8 @@ local Library = getgenv().YX_Library or getgenv().Library
 --  · 边框渐变统一为对称色序（两端同为白色），所有标签页同一张渐变、
 --    同一角度同步旋转，杜绝"一个在那边一个在这边"
 --  · 所有样式对象按名字复用（幂等），脚本重复执行不会叠加
+--  · 修复窗口边框渐变不显示：原有两个 Name=="Main" 分支，第一个命中即 return，
+--    把边框渐变写在第二个分支导致永不可达 → 已合并进第一个分支
 -- ==========================================
 
 local YXFillTop = Color3.fromRGB(150, 150, 150)    -- 上（深，≈主题色 x0.59，清晰可见）
@@ -40,6 +42,29 @@ local function MakeTabBorderGradient()
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(18, 18, 18)),
 		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
 	})
+end
+
+-- 给描边挂黑白流动渐变，并注册进 BorderGrads 共用动画连接
+local function ApplyBorderFlow(stroke, thickness)
+	if not stroke then return end
+	stroke.Color = Color3.new(1, 1, 1)
+	if thickness then stroke.Thickness = thickness end
+	-- 覆盖库的主题注册，防止切主题时把白色描边改回 OutlineColor
+	pcall(function()
+		if Library.Registry and Library.Registry[stroke] then
+			Library.Registry[stroke].Color = function()
+				return Color3.new(1, 1, 1)
+			end
+		end
+	end)
+	local bg = stroke:FindFirstChild("YX_BorderGrad")
+	if not bg then
+		bg = Instance.new("UIGradient")
+		bg.Name = "YX_BorderGrad"
+		bg.Parent = stroke
+	end
+	bg.Color = MakeTabBorderGradient()
+	BorderGrads[bg] = true
 end
 
 -- 注册表持久化在 Library 上：重复执行脚本共用同一张表
@@ -97,36 +122,25 @@ end
 local function BeautifyComponent(inst)
 	if typeof(inst) ~= "Instance" or not inst:IsA("GuiObject") then return end
 
-	-- 主窗口：名为 "Main"、直接挂在 ScreenGui 下（底色近黑，需要更强压暗才可见）
+	-- 主窗口（Name="Main"，直接挂在 ScreenGui 下）：填充 + 黑白流动边框
+	-- 关键：库原有描边是 OutlineColor（40 灰），渐变乘上去只在 0~40 流动 ≈ 看不见
+	-- → 强制纯白 + 加粗，渐变才能展现 255→0→255 的完整黑白流动
+	-- 【修复】边框渐变必须写在这个分支里：它是第一个命中 Main 的分支且会 return，
+	--         之前写在第二个 Main 分支里的边框渐变永远不可达，所以不显示。
 	if inst:IsA("TextButton")
 		and inst.Name == "Main"
 		and inst.Parent == Library.ScreenGui
 		and inst:FindFirstChildOfClass("UIStroke")
 		and inst:FindFirstChildOfClass("UICorner") then
 		ApplyFillGradient(inst, Color3.fromRGB(110, 110, 110))
-		return
-	end
-
-	-- 窗口主框（Name="Main"）：背景是 BackgroundColor（极暗，默认 15,15,15），
-	-- 乘法渐变在这么暗的底上可见范围只有 0~14 级 → 顶部用纯黑吃满整个范围，上深下浅最大化
-	if inst:IsA("TextButton") and inst.Name == "Main"
-		and inst:FindFirstChildOfClass("UICorner")
-		and inst:FindFirstChildOfClass("UIStroke") then
-		if not inst:FindFirstChild("YX_FillGrad") then
-			local g = Instance.new("UIGradient")
-			g.Name = "YX_FillGrad"
-			g.Rotation = 90
-			g.Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
-			})
-			g.Parent = inst
-		end
+		local stroke = inst:FindFirstChildOfClass("UIStroke")
+		ApplyBorderFlow(stroke, 2)
 		return
 	end
 
 	-- 可拖拽标签（AddDraggableLabel）：TextLabel + AutomaticSize XY + UICorner + UIStroke
-	-- 背景同为 BackgroundColor（极暗）→ 与窗口同规格：纯黑顶吃满可见范围
+	-- 背景同为 BackgroundColor（极暗，乘法渐变物理极限 0→15 注定含蓄）
+	-- → 保留纯黑顶填充，另外给描边挂静态黑白渐变边框（无动画），一眼可见
 	if inst:IsA("TextLabel")
 		and inst.AutomaticSize == Enum.AutomaticSize.XY
 		and inst:FindFirstChildOfClass("UICorner")
@@ -140,6 +154,27 @@ local function BeautifyComponent(inst)
 				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
 			})
 			g.Parent = inst
+		end
+		local stroke = inst:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			stroke.Color = Color3.new(1, 1, 1)
+			pcall(function()
+				if Library.Registry and Library.Registry[stroke] then
+					Library.Registry[stroke].Color = function()
+						return Color3.new(1, 1, 1)
+					end
+				end
+			end)
+			if not stroke:FindFirstChild("YX_BorderGrad") then
+				local bg = Instance.new("UIGradient")
+				bg.Name = "YX_BorderGrad"
+				bg.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+					ColorSequenceKeypoint.new(0.5, Color3.fromRGB(18, 18, 18)),
+					ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+				})
+				bg.Parent = stroke
+			end
 		end
 		return
 	end
@@ -177,11 +212,22 @@ local function BeautifyComponent(inst)
 		end
 
 		-- 复选框（AddCheckbox）：方形 Frame（RelativeYY）+ UICorner + UIStroke + 对勾 ImageLabel
+		-- 小尺寸 + 深色底 → 用强规格（顶 40≈结果 4，底 25，差 21 级，一眼可见）
 		if inst.SizeConstraint == Enum.SizeConstraint.RelativeYY
 			and inst:FindFirstChildOfClass("UICorner")
 			and inst:FindFirstChildOfClass("UIStroke")
 			and inst:FindFirstChildOfClass("ImageLabel") then
-			ApplyFillGradient(inst)
+			local g = inst:FindFirstChild("YX_FillGrad")
+			if not g then
+				g = Instance.new("UIGradient")
+				g.Name = "YX_FillGrad"
+				g.Rotation = 90
+				g.Parent = inst
+			end
+			g.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 40)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+			})
 			return
 		end
 
