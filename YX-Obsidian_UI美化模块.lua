@@ -135,7 +135,7 @@ local function BeautifyComponent(inst)
 		and inst:FindFirstChildOfClass("UIStroke") then
 		ApplyFillGradient(inst, Color3.fromRGB(0, 0, 0))
 		local stroke = inst:FindFirstChildOfClass("UIStroke")
-		ForceWhiteStroke(stroke, 2)
+		ForceWhiteStroke(stroke, 1)
 		local bg = stroke:FindFirstChild("YX_BorderGrad")
 		if not bg then
 			bg = Instance.new("UIGradient")
