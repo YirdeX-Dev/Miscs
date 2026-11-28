@@ -10,12 +10,20 @@ local Library = getgenv().YX_Library or getgenv().Library
 -- ==========================================
 -- YX 批量 UI 美化（修复版）
 -- ① 标签页：黑白边框渐变（流动，统一型）+ 选中填充上深下浅
--- ② 窗口 / 按钮 / 下拉框 / 开关 / 颜色选择器 / 输入框 / 滑块 / 通知：批量填充上深下浅（无动画）
+-- ② 窗口 / 可拖拽标签 / 按钮 / 复选框 / 下拉框 / 开关 / 颜色选择器 / 输入框 / 滑块 / 通知：批量填充上深下浅（无动画）
 -- ③ 分隔线：两端 → 中间 渐隐（无动画）
+--
+-- 修复记录：
+--  · 动画不再因触发组件而停转：tick() 驱动 + 处理器 pcall 包裹 +
+--    连接活性自检，断开 3 秒内自动重建（不再依赖 os.clock / dt）
+--  · 边框渐变统一为对称色序（两端同为白色），所有标签页同一张渐变、
+--    同一角度同步旋转，杜绝"一个在那边一个在这边"
+--  · 所有样式对象按名字复用（幂等），脚本重复执行不会叠加
 -- ==========================================
 
-local YXFillTop = Color3.fromRGB(150, 150, 150)
-local YXFillBottom = Color3.fromRGB(255, 255, 255)
+local YXFillTop = Color3.fromRGB(150, 150, 150)    -- 上（深，≈主题色 x0.59，清晰可见）
+local YXFillBottom = Color3.fromRGB(255, 255, 255)   -- 下（浅，主题原色）
+-- 提示：想更柔和就把 150 调大（200≈轻微），想更强就调小（100≈明显压暗）
 
 -- 上深下浅（无动画，按钮/开关/下拉/颜色选择器/标签页选中 共用）
 local function MakeVerticalFill()
@@ -117,6 +125,25 @@ local function BeautifyComponent(inst)
 		return
 	end
 
+	-- 可拖拽标签（AddDraggableLabel）：TextLabel + AutomaticSize XY + UICorner + UIStroke
+	-- 背景同为 BackgroundColor（极暗）→ 与窗口同规格：纯黑顶吃满可见范围
+	if inst:IsA("TextLabel")
+		and inst.AutomaticSize == Enum.AutomaticSize.XY
+		and inst:FindFirstChildOfClass("UICorner")
+		and inst:FindFirstChildOfClass("UIStroke") then
+		if not inst:FindFirstChild("YX_FillGrad") then
+			local g = Instance.new("UIGradient")
+			g.Name = "YX_FillGrad"
+			g.Rotation = 90
+			g.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+			})
+			g.Parent = inst
+		end
+		return
+	end
+
 	-- 按钮 / 下拉显示框 / 颜色选择器色块 / 输入框 / 滑块轨道：(TextButton|TextBox) + UIStroke + UICorner
 	if (inst:IsA("TextButton") or inst:IsA("TextBox"))
 		and inst:FindFirstChildOfClass("UIStroke")
@@ -145,6 +172,15 @@ local function BeautifyComponent(inst)
 			and inst:FindFirstChildOfClass("UIPadding")
 			and inst.Size.Y.Offset > 0
 			and math.abs((inst.Size.X.Offset / inst.Size.Y.Offset) - (32 / 18)) < 0.25 then
+			ApplyFillGradient(inst)
+			return
+		end
+
+		-- 复选框（AddCheckbox）：方形 Frame（RelativeYY）+ UICorner + UIStroke + 对勾 ImageLabel
+		if inst.SizeConstraint == Enum.SizeConstraint.RelativeYY
+			and inst:FindFirstChildOfClass("UICorner")
+			and inst:FindFirstChildOfClass("UIStroke")
+			and inst:FindFirstChildOfClass("ImageLabel") then
 			ApplyFillGradient(inst)
 			return
 		end
