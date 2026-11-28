@@ -82,7 +82,7 @@ local function StyleTabButton(TabButton)
 		BorderStroke.Parent = TabButton
 	end
 	BorderStroke.Color = Color3.fromRGB(255, 255, 255)
-	BorderStroke.Thickness = 2
+	BorderStroke.Thickness = 3.5
 	BorderStroke.Transparency = 0.35
 	BorderStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
@@ -115,7 +115,7 @@ local function BeautifyComponent(inst)
 		and inst:FindFirstChildOfClass("UICorner") then
 		ApplyFillGradient(inst, Color3.fromRGB(0, 0, 0))
 		local stroke = inst:FindFirstChildOfClass("UIStroke")
-		ForceWhiteStroke(stroke, 2)
+		ForceWhiteStroke(stroke, 3.5)
 		local bg = stroke:FindFirstChild("YX_BorderGrad")
 		if not bg then
 			bg = Instance.new("UIGradient")
@@ -128,20 +128,22 @@ local function BeautifyComponent(inst)
 	end
 
 	-- 可拖拽标签（AddDraggableLabel）：TextLabel + AutomaticSize XY + UICorner + UIStroke
-	-- 同为极暗底 → 纯黑顶填充 + 静态黑白渐变边框（无动画，一眼可见）
+	-- 同为极暗底 → 纯黑顶填充 + 黑白渐变边框（注册进 BorderGrads → 与标签页/窗口同步流动）
 	if inst:IsA("TextLabel")
 		and inst.AutomaticSize == Enum.AutomaticSize.XY
 		and inst:FindFirstChildOfClass("UICorner")
 		and inst:FindFirstChildOfClass("UIStroke") then
 		ApplyFillGradient(inst, Color3.fromRGB(0, 0, 0))
 		local stroke = inst:FindFirstChildOfClass("UIStroke")
-		ForceWhiteStroke(stroke)
-		if not stroke:FindFirstChild("YX_BorderGrad") then
-			local bg = Instance.new("UIGradient")
+		ForceWhiteStroke(stroke, 3.5)
+		local bg = stroke:FindFirstChild("YX_BorderGrad")
+		if not bg then
+			bg = Instance.new("UIGradient")
 			bg.Name = "YX_BorderGrad"
-			bg.Color = MakeTabBorderGradient()
 			bg.Parent = stroke
 		end
+		bg.Color = MakeTabBorderGradient()
+		BorderGrads[bg] = true
 		return
 	end
 
